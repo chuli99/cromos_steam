@@ -8,6 +8,9 @@ const $save = document.getElementById("save");
 const $status = document.getElementById("status");
 const $clear = document.getElementById("clear-cache");
 const $foils = document.getElementById("include-foils");
+const $scanDelay = document.getElementById("scan-delay");
+
+const DEFAULT_SCAN_DELAY_MS = 800;
 
 // Muestra un mensaje temporal de estado.
 function showStatus(text, kind) {
@@ -21,15 +24,26 @@ function showStatus(text, kind) {
   }
 }
 
-// Carga la URL y el flag de foils guardados al abrir el popup.
+// Carga la URL, el flag de foils y el delay de escaneo al abrir el popup.
 async function load() {
-  const { backendUrl, includeFoils } = await chrome.storage.local.get([
+  const { backendUrl, includeFoils, scanDelayMs } = await chrome.storage.local.get([
     "backendUrl",
     "includeFoils",
+    "scanDelayMs",
   ]);
   $url.value = backendUrl || DEFAULT_BACKEND_URL;
   $foils.checked = Boolean(includeFoils);
+  $scanDelay.value = Number.isFinite(scanDelayMs) ? scanDelayMs : DEFAULT_SCAN_DELAY_MS;
 }
+
+// Guarda el delay de escaneo (ms). Vacío o inválido => default.
+$scanDelay.addEventListener("change", async () => {
+  let value = parseInt($scanDelay.value, 10);
+  if (!Number.isFinite(value) || value < 0) value = DEFAULT_SCAN_DELAY_MS;
+  $scanDelay.value = value;
+  await chrome.storage.local.set({ scanDelayMs: value });
+  showStatus("Delay guardado ✓", "ok");
+});
 
 // Guarda el flag de foils. Como cambia el resultado, limpia la caché local para
 // que la próxima visita vuelva a pedir el desglose al backend.

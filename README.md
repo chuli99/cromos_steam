@@ -173,6 +173,28 @@ un Steam falso vía `httpx.MockTransport`, sin tocar la red.
    (por ejemplo The Witcher 3). Aparecerá un overlay abajo a la derecha con el
    desglose de profit.
 
+### Escanear el buscador
+
+En la página de búsqueda de Steam (`store.steampowered.com/search…`, con los filtros
+que quieras: orden por precio, sin free-to-play, "con cromos", etc.) aparece un panel
+**🃏 Card Profit · escáner** abajo a la derecha:
+
+1. Clic en **"Escanear resultados"**: la extensión recorre los juegos cargados en la
+   página y consulta el profit de cada uno, anotando cada fila con un badge
+   (verde = profit positivo, rojo = negativo, gris = sin cromos / free-to-play).
+2. El panel lista los resultados ordenados por profit; clic en uno lleva la fila a la
+   vista. El check **"Mostrar solo con profit"** filtra la lista.
+3. Podés **detener** el escaneo en cualquier momento.
+
+**Cuidado con el rate limit de Steam.** El escaneo es **secuencial** (no dispara la
+siguiente consulta hasta que vuelve la anterior) y respeta un **delay configurable**
+entre juegos (popup → *"Delay entre juegos al escanear (ms)"*, default 800 ms), con
+**backoff** si el backend falla. Como el backend cachea, los juegos ya consultados se
+resuelven al instante; los nuevos tardan porque se pide el precio de cada cromo
+respetando el throttle (1 req/3 s al endpoint que Steam limita). Para escanear más
+resultados, hacé scroll para que Steam cargue más filas y volvé a escanear (las ya
+vistas no se vuelven a pedir).
+
 ### Configurar la URL del backend
 
 Por defecto la extensión apunta a `http://localhost:8000`. Para cambiarlo:

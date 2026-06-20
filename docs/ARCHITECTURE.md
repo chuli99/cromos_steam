@@ -141,15 +141,24 @@ datos mockeados (`tests/test_profit.py`).
 
 | Componente | Rol |
 |------------|-----|
-| `content/content.js` | Detecta el `appid` en `…/app/{appid}/…`, pide profit al SW e inyecta el overlay |
+| `content/content.js` | Página de juego: detecta el `appid` en `…/app/{appid}/…`, pide profit al SW e inyecta el overlay |
 | `content/overlay.css` | Estilos del overlay (fijo abajo a la derecha) |
-| `background/service-worker.js` | Llama a `/api/profit/{appid}`; cachea en `chrome.storage.local` (TTL 1h) |
-| `popup/*` | Configura la URL del backend y permite limpiar la caché local |
+| `content/search.js` | Página de búsqueda (`/search…`): panel que escanea los resultados visibles y anota cada fila con un badge de profit |
+| `content/search.css` | Estilos del panel del escáner y de los badges por fila |
+| `background/service-worker.js` | Llama a `/api/profit/{appid}`; cachea en `chrome.storage.local` (TTL 1h). Acepta override de foils (el escaneo pide siempre sin foils) |
+| `popup/*` | Configura URL del backend, toggle de foils, delay de escaneo y limpieza de caché local |
 
-**Flujo:** `content.js` extrae el appid → `chrome.runtime.sendMessage({GET_PROFIT})`
-→ el service worker mira la caché (`chrome.storage.local`), si está vencida hace
-`fetch` al backend, cachea y responde → `content.js` renderiza el overlay con el
-desglose.
+**Flujo (página de juego):** `content.js` extrae el appid →
+`chrome.runtime.sendMessage({GET_PROFIT})` → el service worker mira la caché
+(`chrome.storage.local`), si está vencida hace `fetch` al backend, cachea y responde →
+`content.js` renderiza el overlay con el desglose.
+
+**Flujo (escáner de búsqueda):** `search.js` junta las filas con `data-ds-appid`
+cargadas en el DOM y las procesa **secuencialmente** (una consulta a la vez, sin
+disparar la siguiente hasta recibir la respuesta) con un **delay configurable** entre
+juegos y **backoff** ante errores del backend. Esto, sumado al caché + throttle del
+backend, mantiene el ritmo dentro del rate limit de Steam (el cuello de botella real
+es `priceoverview`, ~20 req/min). Los juegos ya cacheados se resuelven al instante.
 
 La caché del cliente (TTL 1h) evita repegarle al backend al revisitar la misma página.
 

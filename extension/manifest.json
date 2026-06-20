@@ -17,6 +17,12 @@
       "js": ["content/content.js"],
       "css": ["content/overlay.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://store.steampowered.com/search*"],
+      "js": ["content/search.js"],
+      "css": ["content/search.css"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

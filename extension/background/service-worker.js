@@ -12,9 +12,16 @@ async function getBackendUrl() {
 }
 
 // Devuelve la respuesta de profit, usando caché si está fresca.
-async function getProfit(appid) {
-  const { includeFoils } = await chrome.storage.local.get("includeFoils");
-  const foils = Boolean(includeFoils);
+// ``foilsOverride`` (bool) permite forzar el flag de foils sin tocar la config
+// guardada; el escaneo de búsqueda lo usa para pedir SIEMPRE sin foils (más rápido).
+async function getProfit(appid, foilsOverride) {
+  let foils;
+  if (typeof foilsOverride === "boolean") {
+    foils = foilsOverride;
+  } else {
+    const { includeFoils } = await chrome.storage.local.get("includeFoils");
+    foils = Boolean(includeFoils);
+  }
 
   // La key distingue por flag de foils: el desglose cambia según se pidan o no.
   const cacheKey = `profit:${appid}:${foils ? "f" : "n"}`;
@@ -44,7 +51,7 @@ async function getProfit(appid) {
 // Canal de mensajes con el content script y el popup.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "GET_PROFIT") {
-    getProfit(msg.appid).then(sendResponse);
+    getProfit(msg.appid, msg.includeFoils).then(sendResponse);
     return true; // respuesta asíncrona
   }
   if (msg && msg.type === "CLEAR_CACHE") {
