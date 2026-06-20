@@ -146,13 +146,17 @@ async def get_profit(
     cálculo aparte (no entra en el profit de los cromos normales).
     """
     # 1) Precio del juego (caché TTL medio).
-    game_name, game_price = await get_or_set(
+    game_name, game_price, app_type = await get_or_set(
         f"game:{appid}:{settings.country_code}",
         lambda: fetch_game(appid),
         settings.cache_ttl_game,
     )
     if game_name is None:
         raise HTTPException(status_code=404, detail="appid no encontrado en la store de Steam.")
+    if app_type == "dlc":
+        # Un DLC no dropea cromos propios (los dropea el juego base). Se corta acá
+        # para no gastar las llamadas caras de priceoverview.
+        raise HTTPException(status_code=422, detail="Es un DLC; no dropea cromos propios.")
     if game_price is None:
         raise HTTPException(
             status_code=422,

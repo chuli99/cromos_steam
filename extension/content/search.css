@@ -37,6 +37,10 @@ a.search_result_row.scp-row {
   background: #3a4a5a;
   color: #8f98a0;
 }
+.scp-badge-dlc {
+  background: #5c4a8a;
+  color: #fff;
+}
 .scp-badge-err {
   background: #6a3030;
   color: #fff;

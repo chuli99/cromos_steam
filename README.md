@@ -181,19 +181,26 @@ que quieras: orden por precio, sin free-to-play, "con cromos", etc.) aparece un 
 
 1. Clic en **"Escanear resultados"**: la extensión recorre los juegos cargados en la
    página y consulta el profit de cada uno, anotando cada fila con un badge
-   (verde = profit positivo, rojo = negativo, gris = sin cromos / free-to-play).
+   (verde = profit positivo, rojo = negativo, gris = sin cromos / free-to-play,
+   violeta = DLC).
 2. El panel lista los resultados ordenados por profit; clic en uno lleva la fila a la
    vista. El check **"Mostrar solo con profit"** filtra la lista.
-3. Podés **detener** el escaneo en cualquier momento.
+3. **"Ocultar DLC"** (activado por defecto): los DLC no dropean cromos propios, así
+   que se detectan y se **ocultan** de los resultados. Destildalo para volver a verlos.
+4. Podés **detener** el escaneo en cualquier momento.
+
+**Continúa solo más allá de lo visible.** Steam carga los resultados por scroll
+infinito (típicamente ~100 al inicio). Cuando el escáner termina las filas visibles,
+**baja automáticamente** para que Steam cargue más y sigue, hasta llegar al final o
+hasta que lo detengas.
 
 **Cuidado con el rate limit de Steam.** El escaneo es **secuencial** (no dispara la
 siguiente consulta hasta que vuelve la anterior) y respeta un **delay configurable**
 entre juegos (popup → *"Delay entre juegos al escanear (ms)"*, default 800 ms), con
 **backoff** si el backend falla. Como el backend cachea, los juegos ya consultados se
 resuelven al instante; los nuevos tardan porque se pide el precio de cada cromo
-respetando el throttle (1 req/3 s al endpoint que Steam limita). Para escanear más
-resultados, hacé scroll para que Steam cargue más filas y volvé a escanear (las ya
-vistas no se vuelven a pedir).
+respetando el throttle (1 req/3 s al endpoint que Steam limita). Detectar un DLC cuesta
+solo una consulta de `appdetails` (se corta antes de pedir precios de cromos).
 
 ### Configurar la URL del backend
 

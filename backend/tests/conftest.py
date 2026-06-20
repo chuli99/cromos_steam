@@ -69,11 +69,15 @@ def make_appdetails(
     name: str = "Juego Test",
     final_cents: int | None = 299,
     success: bool = True,
+    app_type: str = "game",
 ) -> dict:
-    """Arma el JSON de appdetails. ``final_cents=None`` simula juego gratuito."""
+    """Arma el JSON de appdetails.
+
+    ``final_cents=None`` simula juego gratuito; ``app_type="dlc"`` simula un DLC.
+    """
     if not success:
         return {str(appid): {"success": False}}
-    data: dict = {"name": name}
+    data: dict = {"name": name, "type": app_type}
     if final_cents is not None:
         data["price_overview"] = {"final": final_cents, "currency": "USD"}
     return {str(appid): {"success": True, "data": data}}

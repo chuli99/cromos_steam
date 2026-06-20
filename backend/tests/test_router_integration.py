@@ -59,6 +59,18 @@ async def test_juego_gratuito_422(client: AsyncClient, steam: FakeSteam):
     assert "gratuito" in resp.json()["detail"].lower()
 
 
+async def test_dlc_422_no_consulta_cromos(client: AsyncClient, steam: FakeSteam):
+    """Un DLC -> 422 y se corta antes de pedir la lista/precios de cromos."""
+    steam.appdetails = make_appdetails(APPID, app_type="dlc", final_cents=499)
+
+    resp = await client.get(f"/api/profit/{APPID}")
+    assert resp.status_code == 422
+    assert "dlc" in resp.json()["detail"].lower()
+    # No se gastó ninguna llamada de cromos: se cortó en appdetails.
+    assert "/market/search/render/" not in steam.calls
+    assert "/market/priceoverview/" not in steam.calls
+
+
 async def test_juego_sin_cromos_404(client: AsyncClient, steam: FakeSteam):
     """Juego con precio pero sin cromos -> 404."""
     steam.appdetails = make_appdetails(APPID, final_cents=999)

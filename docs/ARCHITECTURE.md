@@ -35,7 +35,7 @@ permite:
 | `app/cache.py` | Wrapper de aiocache (`get_or_set` read-through con TTL) |
 | `app/throttle.py` | `AsyncThrottle` (semáforo + intervalo mínimo) para priceoverview |
 | `app/steam/client.py` | Cliente httpx async compartido; reintentos + backoff ante 429/5xx |
-| `app/steam/store.py` | `appdetails` → precio del juego |
+| `app/steam/store.py` | `appdetails` → nombre, precio y `type` del juego (para descartar DLCs) |
 | `app/steam/market.py` | `search/render` → lista de cromos; `priceoverview` → precio por cromo |
 | `app/steam/parser.py` | Parseo de precios localizados; aplicación del fee |
 | `app/routers/profit.py` | `GET /api/profit/{appid}`: orquestación + `compute_profit` (pura) |
@@ -51,7 +51,8 @@ respeta el rate limit.
 GET https://store.steampowered.com/api/appdetails?appids={appid}&cc=ar&l=spanish
 ```
 `data[appid].data.price_overview.final` viene en centavos. Si no existe
-`price_overview`, el juego es gratis/sin precio → `422`.
+`price_overview`, el juego es gratis/sin precio → `422`. Si `data[appid].data.type`
+es `"dlc"`, se devuelve `422` sin pedir cromos (un DLC no dropea cromos propios).
 
 **2. Lista de cromos — Market search (modo JSON)**
 
@@ -143,7 +144,7 @@ datos mockeados (`tests/test_profit.py`).
 |------------|-----|
 | `content/content.js` | Página de juego: detecta el `appid` en `…/app/{appid}/…`, pide profit al SW e inyecta el overlay |
 | `content/overlay.css` | Estilos del overlay (fijo abajo a la derecha) |
-| `content/search.js` | Página de búsqueda (`/search…`): panel que escanea los resultados visibles y anota cada fila con un badge de profit |
+| `content/search.js` | Página de búsqueda (`/search…`): panel que escanea los resultados (cargando más por scroll), anota cada fila con un badge de profit y oculta los DLC |
 | `content/search.css` | Estilos del panel del escáner y de los badges por fila |
 | `background/service-worker.js` | Llama a `/api/profit/{appid}`; cachea en `chrome.storage.local` (TTL 1h). Acepta override de foils (el escaneo pide siempre sin foils) |
 | `popup/*` | Configura URL del backend, toggle de foils, delay de escaneo y limpieza de caché local |
@@ -156,7 +157,10 @@ datos mockeados (`tests/test_profit.py`).
 **Flujo (escáner de búsqueda):** `search.js` junta las filas con `data-ds-appid`
 cargadas en el DOM y las procesa **secuencialmente** (una consulta a la vez, sin
 disparar la siguiente hasta recibir la respuesta) con un **delay configurable** entre
-juegos y **backoff** ante errores del backend. Esto, sumado al caché + throttle del
+juegos y **backoff** ante errores del backend. Cuando agota las filas visibles, hace
+**scroll al fondo** para que Steam cargue más resultados (scroll infinito) y continúa,
+hasta el final o hasta que el usuario detenga. Los **DLC** se detectan (el backend
+responde `422` por `type=dlc`) y se ocultan. Esto, sumado al caché + throttle del
 backend, mantiene el ritmo dentro del rate limit de Steam (el cuello de botella real
 es `priceoverview`, ~20 req/min). Los juegos ya cacheados se resuelven al instante.
 
