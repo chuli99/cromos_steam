@@ -128,8 +128,12 @@ Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env
 
 ```bash
 cd backend
-pytest          # parser + cálculo de profit (sin red)
+pytest          # parser + cálculo de profit + integración del router (sin red)
 ```
+
+Los tests de integración (`tests/test_router_integration.py`) ejercitan el endpoint
+completo (`router + caché + throttle + cliente httpx con reintentos + parser`) contra
+un Steam falso vía `httpx.MockTransport`, sin tocar la red.
 
 ---
 

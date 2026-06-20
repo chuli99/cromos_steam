@@ -167,7 +167,8 @@ La caché del cliente (TTL 1h) evita repegarle al backend al revisitar la misma 
 
 ## Próximos pasos sugeridos
 
-- Tests de integración del router con `httpx.MockTransport` (sin pegarle a Steam).
+- ✅ Tests de integración del router con `httpx.MockTransport` (sin pegarle a Steam) —
+  ver `backend/tests/test_router_integration.py`.
 - Soporte de foils como cálculo aparte (opcional).
 - Caché persistente (Redis) para despliegue multi-instancia.
 - Empaquetado de la extensión y publicación.
