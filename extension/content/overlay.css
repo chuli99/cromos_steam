@@ -1,0 +1,89 @@
+/* Overlay inyectado en la página de la store. Fijo abajo a la derecha.
+   IDs/clases con prefijo scp- para no chocar con los estilos de Steam. */
+
+#scp-overlay {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2147483647;
+  width: 280px;
+  font-family: "Motiva Sans", Arial, sans-serif;
+  font-size: 13px;
+  color: #c6d4df;
+  background: #1b2838;
+  border: 1px solid #2a475e;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+#scp-overlay .scp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: linear-gradient(135deg, #2a475e, #1b2838);
+}
+
+#scp-overlay .scp-logo {
+  font-weight: 700;
+  color: #66c0f4;
+}
+
+#scp-overlay .scp-close {
+  background: transparent;
+  border: none;
+  color: #8f98a0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+#scp-overlay .scp-close:hover {
+  color: #fff;
+}
+
+#scp-overlay .scp-body {
+  padding: 10px;
+}
+
+#scp-overlay .scp-game {
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+#scp-overlay .scp-profit {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+#scp-overlay .scp-pos {
+  color: #a4d007;
+}
+#scp-overlay .scp-neg {
+  color: #e24b4b;
+}
+
+#scp-overlay .scp-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#scp-overlay .scp-table td {
+  padding: 2px 0;
+}
+#scp-overlay .scp-table td:last-child {
+  text-align: right;
+  color: #ffffff;
+}
+
+#scp-overlay .scp-note {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8f98a0;
+  font-style: italic;
+}
+
+#scp-overlay .scp-error {
+  color: #e24b4b;
+}
