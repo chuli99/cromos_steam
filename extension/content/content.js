@@ -47,6 +47,23 @@
     wireClose();
   }
 
+  // Bloque opcional de foils (cálculo aparte). Solo si el backend lo incluyó.
+  function foilsBlock(d) {
+    const f = d.foils;
+    if (!f) return "";
+    if (!f.total_foils) {
+      return `<div class="scp-foils scp-note">Sin foils para este juego.</div>`;
+    }
+    return `
+      <div class="scp-foils">
+        <div class="scp-subhead">✨ Foils (${f.total_foils})</div>
+        <table class="scp-table">
+          <tr><td>Precio promedio</td><td>${fmt(f.avg_foil_price, d.currency)}</td></tr>
+          <tr><td>Promedio neto</td><td>${fmt(f.net_avg_foil_price, d.currency)}</td></tr>
+        </table>
+      </div>`;
+  }
+
   function renderResult(d) {
     const profitClass = d.profit_positive ? "scp-pos" : "scp-neg";
     const profitSign = d.profit_positive ? "+" : "";
@@ -69,6 +86,7 @@
           <tr><td>Fee Steam</td><td>${(d.fee_rate * 100).toFixed(0)}%</td></tr>
           <tr><td>Valor neto drop</td><td>${fmt(d.net_card_value, d.currency)}</td></tr>
         </table>
+        ${foilsBlock(d)}
         <div class="scp-note">Valor esperado, no garantizado. El profit real suele ser negativo.</div>
       </div>`;
     wireClose();

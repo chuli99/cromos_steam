@@ -105,6 +105,30 @@ Ejemplo:
 curl http://localhost:8000/api/profit/292030
 ```
 
+#### Foils (opcional)
+
+Con el parámetro `include_foils=true` se agrega un resumen del valor de mercado de
+las **foils**, como cálculo aparte (no entran en el profit de los cromos normales,
+porque son raras y distorsionarían el valor esperado del drop):
+
+```bash
+curl "http://localhost:8000/api/profit/292030?include_foils=true"
+```
+
+Agrega al `ProfitResponse` el bloque `foils` (o `null` si no se pidió):
+
+```jsonc
+{
+  // …
+  "foils": {
+    "total_foils": 6,
+    "avg_foil_price": 3.2,
+    "net_avg_foil_price": 2.78,   // promedio tras descontar el fee de Steam
+    "foils": [ { "name": "Triss (Foil)", "lowest_price": 2.5, "success": true } ]
+  }
+}
+```
+
 ### Configuración
 
 Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env`
@@ -159,6 +183,10 @@ Por defecto la extensión apunta a `http://localhost:8000`. Para cambiarlo:
 > Si usás un backend en otro host (no localhost), agregá ese host a
 > `host_permissions` en `extension/manifest.json`. El backend ya habilita CORS para
 > el origin `chrome-extension://*`.
+
+Desde el popup también podés activar **"Incluir foils"**: el overlay agrega un bloque
+con el valor de mercado de las foils (cálculo aparte). Al cambiar el toggle se limpia
+la caché local para que la próxima visita vuelva a pedir el desglose.
 
 Desde el popup también podés **limpiar la caché local** (respuestas guardadas en
 `chrome.storage.local` con TTL de 1h).

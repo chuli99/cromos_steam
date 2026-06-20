@@ -2,7 +2,7 @@
 import pytest
 
 from app.models import CardPrice
-from app.routers.profit import build_card_price, compute_profit
+from app.routers.profit import build_card_price, compute_foil_summary, compute_profit
 
 
 def make_cards(prices: list[float | None]) -> list[CardPrice]:
@@ -60,6 +60,26 @@ def test_sin_cromos_con_precio_no_rompe():
     assert r.gross_card_value == 0.0
     assert r.profit == pytest.approx(-2.0)
     assert r.profit_positive is False
+
+
+def test_foil_summary_promedio_y_neto():
+    # 2 foils con precio (2.0 y 4.0) => promedio 3.0; neto = 3/1.15.
+    foils = make_cards([2.0, 4.0])
+    r = compute_foil_summary(foils, fee_rate=0.15)
+
+    assert r.total_foils == 2
+    assert r.avg_foil_price == pytest.approx(3.0)
+    assert r.net_avg_foil_price == pytest.approx(3.0 / 1.15, abs=1e-4)
+    assert len(r.foils) == 2
+
+
+def test_foil_summary_sin_precio_no_rompe():
+    foils = make_cards([None, None])
+    r = compute_foil_summary(foils)
+
+    assert r.total_foils == 2
+    assert r.avg_foil_price == 0.0
+    assert r.net_avg_foil_price == 0.0
 
 
 def test_build_card_price_success_false():

@@ -77,6 +77,18 @@
   color: #ffffff;
 }
 
+#scp-overlay .scp-foils {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #2a475e;
+}
+
+#scp-overlay .scp-subhead {
+  font-weight: 600;
+  color: #66c0f4;
+  margin-bottom: 4px;
+}
+
 #scp-overlay .scp-note {
   margin-top: 8px;
   font-size: 11px;

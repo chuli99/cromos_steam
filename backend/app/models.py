@@ -14,6 +14,20 @@ class CardPrice(BaseModel):
     success: bool = False              # True si Steam devolvió precio válido
 
 
+class FoilSummary(BaseModel):
+    """Resumen de las foils del juego (cálculo aparte, informativo).
+
+    Las foils no siguen el modelo de drop de los cromos normales (son raras y
+    distorsionarían el valor esperado), así que no se calcula un "profit" sobre
+    ellas: solo se reporta su valor de mercado.
+    """
+
+    total_foils: int            # cantidad de foils del set
+    avg_foil_price: float       # precio promedio por foil (solo las con precio)
+    net_avg_foil_price: float   # promedio tras descontar el fee de Steam
+    foils: list[CardPrice]      # desglose por foil
+
+
 class ProfitResponse(BaseModel):
     """Respuesta completa del cálculo de profit con todo el desglose."""
 
@@ -34,3 +48,5 @@ class ProfitResponse(BaseModel):
     profit_positive: bool       # True si profit > 0
 
     cards: list[CardPrice]      # desglose por cromo
+
+    foils: FoilSummary | None = None  # resumen de foils (solo si se pidió)

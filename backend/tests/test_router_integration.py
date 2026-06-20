@@ -148,6 +148,63 @@ async def test_reintenta_ante_5xx_transitorio(
     assert steam.calls["/api/appdetails"] == 3
 
 
+async def test_sin_include_foils_no_consulta_foils(client: AsyncClient, steam: FakeSteam):
+    """Sin ``include_foils`` la respuesta no trae foils y solo se pide la lista normal."""
+    steam.appdetails = make_appdetails(APPID, final_cents=299)
+    steam.search = make_search(CARDS[:2])
+    steam.prices = {name: make_price() for name in CARDS[:2]}
+
+    resp = await client.get(f"/api/profit/{APPID}")
+    assert resp.status_code == 200
+    assert resp.json()["foils"] is None
+    # Solo una búsqueda (la de cromos normales), no la de foils.
+    assert steam.calls["/market/search/render/"] == 1
+
+
+async def test_include_foils_agrega_resumen(client: AsyncClient, steam: FakeSteam):
+    """Con ``include_foils=true`` se agrega el resumen de foils (cálculo aparte)."""
+    foils = [f"{APPID}-Triss (Foil)", f"{APPID}-Geralt (Foil)"]
+    steam.appdetails = make_appdetails(APPID, final_cents=299)
+    steam.search = make_search(CARDS[:2])
+    steam.foil_search = make_search(foils)
+    steam.prices = {
+        CARDS[0]: make_price(lowest="$0.16"),
+        CARDS[1]: make_price(lowest="$0.16"),
+        foils[0]: make_price(lowest="$2.00"),
+        foils[1]: make_price(lowest="$4.00"),
+    }
+
+    resp = await client.get(f"/api/profit/{APPID}?include_foils=true")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    # El profit de cromos normales no se ve afectado por las foils.
+    assert body["avg_card_price"] == pytest.approx(0.16)
+
+    foil_summary = body["foils"]
+    assert foil_summary is not None
+    assert foil_summary["total_foils"] == 2
+    assert foil_summary["avg_foil_price"] == pytest.approx(3.0)         # (2 + 4) / 2
+    assert foil_summary["net_avg_foil_price"] == pytest.approx(3.0 / 1.15, abs=1e-4)
+    assert {f["name"] for f in foil_summary["foils"]} == {"Triss (Foil)", "Geralt (Foil)"}
+    # Se hicieron dos búsquedas: cromos normales + foils.
+    assert steam.calls["/market/search/render/"] == 2
+
+
+async def test_include_foils_sin_foils_no_rompe(client: AsyncClient, steam: FakeSteam):
+    """Si el juego no tiene foils, el resumen viene vacío (total 0), sin romper."""
+    steam.appdetails = make_appdetails(APPID, final_cents=299)
+    steam.search = make_search(CARDS[:2])
+    steam.foil_search = make_search([])
+    steam.prices = {name: make_price() for name in CARDS[:2]}
+
+    resp = await client.get(f"/api/profit/{APPID}?include_foils=true")
+    assert resp.status_code == 200
+
+    foil_summary = resp.json()["foils"]
+    assert foil_summary == {"total_foils": 0, "avg_foil_price": 0.0, "net_avg_foil_price": 0.0, "foils": []}
+
+
 async def test_health(client: AsyncClient):
     """Healthcheck simple."""
     resp = await client.get("/health")

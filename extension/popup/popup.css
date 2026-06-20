@@ -63,6 +63,21 @@ button.secondary:hover {
   background: #355f7d;
 }
 
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  color: #c6d4df;
+  cursor: pointer;
+}
+label.check input {
+  width: auto;
+  margin: 0;
+  accent-color: #66c0f4;
+  cursor: pointer;
+}
+
 .status {
   min-height: 16px;
   margin: 8px 0 0;

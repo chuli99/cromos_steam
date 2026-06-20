@@ -13,15 +13,20 @@ async function getBackendUrl() {
 
 // Devuelve la respuesta de profit, usando caché si está fresca.
 async function getProfit(appid) {
-  const cacheKey = `profit:${appid}`;
+  const { includeFoils } = await chrome.storage.local.get("includeFoils");
+  const foils = Boolean(includeFoils);
+
+  // La key distingue por flag de foils: el desglose cambia según se pidan o no.
+  const cacheKey = `profit:${appid}:${foils ? "f" : "n"}`;
   const stored = (await chrome.storage.local.get(cacheKey))[cacheKey];
   if (stored && Date.now() - stored.ts < CACHE_TTL_MS) {
     return { ok: true, data: stored.data, cached: true };
   }
 
   const base = await getBackendUrl();
+  const query = foils ? "?include_foils=true" : "";
   try {
-    const resp = await fetch(`${base}/api/profit/${appid}`);
+    const resp = await fetch(`${base}/api/profit/${appid}${query}`);
     if (!resp.ok) {
       // Propagar el detalle del backend (ej: 422 free-to-play, 404 sin cromos).
       const body = await resp.json().catch(() => ({}));

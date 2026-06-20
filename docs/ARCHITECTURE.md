@@ -63,8 +63,9 @@ GET https://steamcommunity.com/market/search/render/
       &category_753_cardborder[]=tag_cardborder_0
 ```
 - `norender=1` es obligatorio para recibir JSON.
-- `item_class_2` = trading cards; `cardborder_0` = normales (las que dropean). v1 no
-  incluye foils.
+- `item_class_2` = trading cards; `cardborder_0` = normales (las que dropean),
+  `cardborder_1` = foils. El profit usa solo las normales; las foils se consultan
+  aparte cuando se pide `include_foils=true` (`fetch_card_list(appid, foil=True)`).
 - El `market_hash_name` viene como `{appid}-{nombre}` (ej: `292030-Triss`).
 
 **3. Precio de cada cromo — priceoverview**
@@ -162,13 +163,17 @@ La caché del cliente (TTL 1h) evita repegarle al backend al revisitar la misma 
 - **`compute_profit` pura**: separa la lógica de negocio de la I/O para testear sin red.
 - **Currency configurable, default USD (1)**: USD es el más líquido/estable en el
   market de cromos.
-- **Solo cromos normales (no foils)** en v1: las foils son raras y distorsionan el
-  valor esperado del drop.
+- **Foils como cálculo aparte**: el profit usa solo cromos normales (las foils son
+  raras y distorsionan el valor esperado del drop). Con `include_foils=true` se
+  reporta su valor de mercado por separado (`FoilSummary`), sin mezclarlo en el profit.
 
 ## Próximos pasos sugeridos
 
 - ✅ Tests de integración del router con `httpx.MockTransport` (sin pegarle a Steam) —
   ver `backend/tests/test_router_integration.py`.
-- Soporte de foils como cálculo aparte (opcional).
-- Caché persistente (Redis) para despliegue multi-instancia.
-- Empaquetado de la extensión y publicación.
+- ✅ Soporte de foils como cálculo aparte (`include_foils=true`) — `FoilSummary` en
+  `app/models.py`, `compute_foil_summary` en `app/routers/profit.py`, toggle en el popup.
+- Caché persistente (Redis) para despliegue multi-instancia — **fuera de alcance**:
+  el uso es local de instancia única, la caché en memoria alcanza.
+- Publicación en Chrome Web Store — **fuera de alcance**: la extensión se usa
+  localmente (cargar descomprimida).

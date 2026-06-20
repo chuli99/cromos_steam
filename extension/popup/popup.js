@@ -7,6 +7,7 @@ const $url = document.getElementById("backend-url");
 const $save = document.getElementById("save");
 const $status = document.getElementById("status");
 const $clear = document.getElementById("clear-cache");
+const $foils = document.getElementById("include-foils");
 
 // Muestra un mensaje temporal de estado.
 function showStatus(text, kind) {
@@ -20,11 +21,24 @@ function showStatus(text, kind) {
   }
 }
 
-// Carga la URL guardada al abrir el popup.
+// Carga la URL y el flag de foils guardados al abrir el popup.
 async function load() {
-  const { backendUrl } = await chrome.storage.local.get("backendUrl");
+  const { backendUrl, includeFoils } = await chrome.storage.local.get([
+    "backendUrl",
+    "includeFoils",
+  ]);
   $url.value = backendUrl || DEFAULT_BACKEND_URL;
+  $foils.checked = Boolean(includeFoils);
 }
+
+// Guarda el flag de foils. Como cambia el resultado, limpia la caché local para
+// que la próxima visita vuelva a pedir el desglose al backend.
+$foils.addEventListener("change", async () => {
+  await chrome.storage.local.set({ includeFoils: $foils.checked });
+  chrome.runtime.sendMessage({ type: "CLEAR_CACHE" }, () => {
+    showStatus(`Foils ${$foils.checked ? "activadas" : "desactivadas"} ✓`, "ok");
+  });
+});
 
 // Guarda la URL del backend (normalizando barras finales).
 $save.addEventListener("click", async () => {

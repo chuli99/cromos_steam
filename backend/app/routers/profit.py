@@ -6,13 +6,13 @@ pura para poder testearla sin red.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..cache import get_or_set
 from ..config import settings
-from ..models import CardPrice, ProfitResponse
+from ..models import CardPrice, FoilSummary, ProfitResponse
 from ..steam.market import fetch_card_list, fetch_card_price
 from ..steam.parser import apply_fee, parse_price
 from ..steam.store import fetch_game
@@ -52,6 +52,25 @@ def build_card_price(market_hash_name: str, raw: dict[str, Any] | None) -> CardP
         median_price=median,
         volume=volume,
         success=lowest is not None,
+    )
+
+
+def compute_foil_summary(
+    foils: list[CardPrice],
+    fee_rate: float = settings.fee_rate,
+) -> FoilSummary:
+    """Resume el valor de mercado de las foils (sin modelo de drop ni profit).
+
+    El promedio se calcula solo sobre foils con precio; las que no tienen se
+    excluyen (pero igual aparecen en el desglose con ``success=False``).
+    """
+    priced = [c.lowest_price for c in foils if c.success and c.lowest_price is not None]
+    avg = sum(priced) / len(priced) if priced else 0.0
+    return FoilSummary(
+        total_foils=len(foils),
+        avg_foil_price=round(avg, 4),
+        net_avg_foil_price=round(apply_fee(avg, fee_rate), 4),
+        foils=foils,
     )
 
 
@@ -103,9 +122,29 @@ def compute_profit(
     )
 
 
+async def _fetch_prices(card_names: list[str]) -> list[CardPrice]:
+    """Resuelve el precio de cada cromo (con caché TTL largo + throttle)."""
+    cards: list[CardPrice] = []
+    for name in card_names:
+        raw = await get_or_set(
+            f"cardprice:{settings.currency}:{name}",
+            lambda n=name: fetch_card_price(n),
+            settings.cache_ttl_cards,
+        )
+        cards.append(build_card_price(name, raw))
+    return cards
+
+
 @router.get("/profit/{appid}", response_model=ProfitResponse)
-async def get_profit(appid: int) -> ProfitResponse:
-    """Devuelve el desglose de profit para un juego de Steam."""
+async def get_profit(
+    appid: int,
+    include_foils: Annotated[bool, Query(description="Incluir resumen de foils (cálculo aparte).")] = False,
+) -> ProfitResponse:
+    """Devuelve el desglose de profit para un juego de Steam.
+
+    Con ``include_foils=true`` se agrega un resumen del valor de las foils, como
+    cálculo aparte (no entra en el profit de los cromos normales).
+    """
     # 1) Precio del juego (caché TTL medio).
     game_name, game_price = await get_or_set(
         f"game:{appid}:{settings.country_code}",
@@ -129,15 +168,20 @@ async def get_profit(appid: int) -> ProfitResponse:
     if not card_names:
         raise HTTPException(status_code=404, detail="El juego no tiene cromos (trading cards).")
 
-    # 3) Precio de cada cromo (caché TTL largo + throttle dentro de fetch_card_price).
-    cards: list[CardPrice] = []
-    for name in card_names:
-        raw = await get_or_set(
-            f"cardprice:{settings.currency}:{name}",
-            lambda n=name: fetch_card_price(n),
-            settings.cache_ttl_cards,
-        )
-        cards.append(build_card_price(name, raw))
+    # 3) Precio de cada cromo normal (throttle + caché dentro de _fetch_prices).
+    cards = await _fetch_prices(card_names)
 
-    # 4) Cálculo final.
-    return compute_profit(appid, game_name, game_price, settings.currency, cards)
+    # 4) Cálculo del profit de cromos normales.
+    result = compute_profit(appid, game_name, game_price, settings.currency, cards)
+
+    # 5) (Opcional) Resumen de foils, como cálculo aparte.
+    if include_foils:
+        foil_names = await get_or_set(
+            f"foillist:{appid}",
+            lambda: fetch_card_list(appid, foil=True),
+            settings.cache_ttl_card_list,
+        )
+        foil_cards = await _fetch_prices(foil_names) if foil_names else []
+        result.foils = compute_foil_summary(foil_cards)
+
+    return result

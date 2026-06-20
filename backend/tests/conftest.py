@@ -33,6 +33,7 @@ class FakeSteam:
     def __init__(self) -> None:
         self.appdetails: dict | None = None
         self.search: dict | None = None
+        self.foil_search: dict | None = None
         self.prices: dict[str, dict] = {}
         self.fail_sequence: dict[str, list[int]] = {}
         self.calls: dict[str, int] = {}
@@ -49,6 +50,10 @@ class FakeSteam:
         if path.endswith("/api/appdetails"):
             return httpx.Response(200, json=self.appdetails or {})
         if path.endswith("/market/search/render/"):
+            # Normales vs foils se distinguen por el parámetro cardborder.
+            border = request.url.params.get("category_753_cardborder[]", "")
+            if border == "tag_cardborder_1":
+                return httpx.Response(200, json=self.foil_search or {"results": []})
             return httpx.Response(200, json=self.search or {"results": []})
         if path.endswith("/market/priceoverview/"):
             name = request.url.params.get("market_hash_name", "")

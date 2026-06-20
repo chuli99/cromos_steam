@@ -1,7 +1,8 @@
 """Steam Community Market: lista de cromos y precio por cromo.
 
-- ``fetch_card_list``: usa search/render para listar los cromos **normales**
-  (item_class_2 = trading cards, cardborder_0 = normales, sin foils) de un juego.
+- ``fetch_card_list``: usa search/render para listar los cromos de un juego
+  (item_class_2 = trading cards). Por defecto los **normales** (cardborder_0);
+  con ``foil=True`` lista las **foils** (cardborder_1).
 - ``fetch_card_price``: usa priceoverview (pasando por el throttle global) para el
   precio de un cromo. Todos los cromos viven bajo ``appid=753``.
 """
@@ -14,11 +15,14 @@ from ..throttle import priceoverview_throttle
 from .client import get_json
 
 
-async def fetch_card_list(appid: int) -> list[str]:
-    """Devuelve los ``market_hash_name`` de los cromos normales del juego.
+async def fetch_card_list(appid: int, foil: bool = False) -> list[str]:
+    """Devuelve los ``market_hash_name`` de los cromos del juego.
 
     ``norender=1`` es obligatorio para recibir JSON en vez de HTML.
+    ``foil=False`` lista los cromos normales; ``foil=True``, las foils.
     """
+    # cardborder_0 = normales (las que dropean); cardborder_1 = foils (raras).
+    cardborder = "tag_cardborder_1" if foil else "tag_cardborder_0"
     url = f"{settings.steam_community_base}/market/search/render/"
     params = {
         "appid": settings.cards_appid,        # 753 (cromos)
@@ -26,7 +30,7 @@ async def fetch_card_list(appid: int) -> list[str]:
         "count": 100,
         "category_753_Game[]": f"tag_app_{appid}",
         "category_753_item_class[]": "tag_item_class_2",   # trading cards
-        "category_753_cardborder[]": "tag_cardborder_0",   # normales (no foils)
+        "category_753_cardborder[]": cardborder,
     }
     data = await get_json(url, params)
 
