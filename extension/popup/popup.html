@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Steam Card Profit</title>
+  </head>
+  <body>
+    <header>
+      <span class="logo">🃏 Steam Card Profit</span>
+    </header>
+
+    <main>
+      <label for="backend-url">URL del backend</label>
+      <input
+        id="backend-url"
+        type="url"
+        placeholder="http://localhost:8000"
+        spellcheck="false"
+      />
+      <button id="save">Guardar</button>
+      <p id="status" class="status"></p>
+
+      <hr />
+
+      <button id="clear-cache" class="secondary">Limpiar caché local</button>
+
+      <p class="hint">
+        Abrí la página de un juego en
+        <strong>store.steampowered.com/app/…</strong> para ver el desglose de
+        profit. La herramienta analiza y compara: el profit real suele ser
+        negativo.
+      </p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

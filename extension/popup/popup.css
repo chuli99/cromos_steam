@@ -1,0 +1,89 @@
+/* Estilos del popup, en línea con la paleta de Steam. */
+
+body {
+  margin: 0;
+  width: 280px;
+  font-family: "Motiva Sans", Arial, sans-serif;
+  font-size: 13px;
+  color: #c6d4df;
+  background: #1b2838;
+}
+
+header {
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #2a475e, #1b2838);
+}
+
+.logo {
+  font-weight: 700;
+  color: #66c0f4;
+}
+
+main {
+  padding: 12px;
+}
+
+label {
+  display: block;
+  margin-bottom: 4px;
+  color: #8f98a0;
+}
+
+input[type="url"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border: 1px solid #2a475e;
+  border-radius: 3px;
+  background: #316282;
+  color: #fff;
+  font-size: 13px;
+}
+
+button {
+  width: 100%;
+  padding: 7px;
+  border: none;
+  border-radius: 3px;
+  background: #66c0f4;
+  color: #0b1419;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover {
+  background: #7fcaf6;
+}
+
+button.secondary {
+  background: #2a475e;
+  color: #c6d4df;
+}
+button.secondary:hover {
+  background: #355f7d;
+}
+
+.status {
+  min-height: 16px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.status.ok {
+  color: #a4d007;
+}
+.status.error {
+  color: #e24b4b;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #2a475e;
+  margin: 14px 0;
+}
+
+.hint {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: #8f98a0;
+  line-height: 1.4;
+}
