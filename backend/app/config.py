@@ -26,13 +26,15 @@ class Settings(BaseSettings):
     cache_ttl_card_list: int = 24 * 3600  # lista de cromos: 24h
 
     # --- Rate limiting por host de Steam (intervalo mínimo entre requests, s) ---
-    # Cada host de Steam se limita por separado (tiene su propio rate limit).
-    community_interval: float = 3.0  # steamcommunity.com (priceoverview/search): el más agresivo
-    store_interval: float = 1.5      # store.steampowered.com (appdetails)
+    # Cada host se limita por separado. Valores POR DEBAJO del máximo teórico (dejar
+    # margen): community ~20 req/min (máx 3s) -> 3.5s; store ~200 req/5min (máx 1.5s) -> 2s.
+    community_interval: float = 3.5  # steamcommunity.com (priceoverview/search): ~17 req/min
+    store_interval: float = 2.0      # store.steampowered.com (appdetails): ~150 req/5min
     throttle_concurrency: int = 1    # requests concurrentes por host
     max_retries: int = 4             # reintentos ante 429 / 5xx / red
     backoff_base: float = 2.0        # base del backoff exponencial (s)
-    backoff_max: float = 30.0        # tope del backoff / Retry-After (s)
+    backoff_max: float = 60.0        # tope del backoff / Retry-After (s)
+    cooldown_429: float = 30.0       # pausa del host ante un 429 sin Retry-After (s)
 
     # --- Cálculo del profit ---
     fee_rate: float = 0.15   # fee de Steam (5% + 10%)

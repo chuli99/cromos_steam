@@ -42,15 +42,15 @@ def _backoff(attempt: int) -> float:
     return min(settings.backoff_base ** attempt, settings.backoff_max)
 
 
-def _retry_after(resp: httpx.Response, attempt: int) -> float:
-    """Segundos a esperar ante un 429: honra ``Retry-After`` si viene, si no backoff."""
+def _retry_after(resp: httpx.Response) -> float:
+    """Segundos de cooldown ante un 429: honra ``Retry-After`` si viene, si no un fijo."""
     raw = resp.headers.get("Retry-After")
     if raw:
         try:
             return min(float(raw), settings.backoff_max)
         except ValueError:
             pass
-    return _backoff(attempt)
+    return settings.cooldown_429
 
 
 async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
@@ -58,7 +58,10 @@ async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
 
     - **Throttle por host**: cada request a Steam respeta el intervalo mínimo del
       host (community/store se limitan por separado), evitando ráfagas que disparan 429.
-    - Reintenta ante 429 (honrando ``Retry-After``), 5xx y errores de red.
+    - Ante un **429**, el host entra en *cooldown* adaptativo (``throttle.penalize``):
+      se pausa ``Retry-After``/``cooldown_429`` segundos y sube su intervalo; con cada
+      éxito (``throttle.relax``) el intervalo decae hacia el base.
+    - Reintenta ante 429, 5xx y errores de red.
 
     Lanza la última excepción si se agotan los reintentos.
     """
@@ -68,19 +71,21 @@ async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
 
     for attempt in range(settings.max_retries):
         try:
-            # El throttle espacia el inicio de cada request al host.
+            # El throttle espacia el inicio de cada request al host (y aplica cooldown).
             async with throttle:
                 resp = await client.get(url, params=params)
 
             if resp.status_code == 429:
-                # Rate limited: esperar (Retry-After o backoff) y reintentar.
+                # Rate limited: penalizar el host (cooldown + subir intervalo) y reintentar.
+                # El propio throttle hará esperar el cooldown en el próximo __aenter__.
                 last_exc = httpx.HTTPStatusError(
                     "429 Too Many Requests", request=resp.request, response=resp
                 )
-                await asyncio.sleep(_retry_after(resp, attempt))
+                throttle.penalize(_retry_after(resp))
                 continue
 
             resp.raise_for_status()
+            throttle.relax()
             return resp.json()
 
         except httpx.HTTPStatusError as exc:

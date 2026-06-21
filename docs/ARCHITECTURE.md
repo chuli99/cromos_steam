@@ -95,12 +95,19 @@ ejecuta la corutina, guarda y devuelve. En v1 la caché es **en memoria del proc
 
 - **Throttle por host**: `client.get_json` aplica un `AsyncThrottle` (semáforo +
   intervalo mínimo) **por cada host de Steam**, así *toda* request —no solo
-  `priceoverview`— queda espaciada y no se generan ráfagas que disparan 429. Por
-  defecto: `steamcommunity.com` (priceoverview/search) 1 req/3s; `store.steampowered.com`
-  (appdetails) 1 req/1,5s. Cada host se limita por separado (tienen rate limits propios).
-- `client.get_json` reintenta ante **429** (honrando el header **`Retry-After`**), **5xx**
-  y errores de red, con **backoff exponencial** topeado (`min(backoff_base ** intento,
-  backoff_max)`), hasta `max_retries`.
+  `priceoverview`— queda espaciada y no se generan ráfagas que disparan 429. Los
+  intervalos por defecto se eligen **por debajo** del máximo de Steam (deja margen,
+  porque el límite es una ventana deslizante y baja en horario pico):
+  `steamcommunity.com` (priceoverview/search) ~1 req/3,5s (≈17/min, máx ~20);
+  `store.steampowered.com` (appdetails) ~1 req/2s (≈150/5min, máx ~200). Cada host se
+  limita por separado (tienen rate limits propios).
+- **Cooldown adaptativo ante 429**: cuando Steam responde 429, el throttle del host
+  se *penaliza* (`penalize`): entra en cooldown por `Retry-After` (o `cooldown_429`, 30s
+  por defecto) y **sube su intervalo** (× `_BUMP`, con tope); con cada éxito (`relax`)
+  el intervalo **decae** hacia el base. Esto replica el cooldown de Steam y absorbe los
+  picos sin frenar el régimen normal.
+- `client.get_json` reintenta ante **429**, **5xx** y errores de red, con **backoff
+  exponencial** topeado (`min(backoff_base ** intento, backoff_max)`), hasta `max_retries`.
 - `User-Agent` explícito en todas las requests.
 
 ### Parser robusto
