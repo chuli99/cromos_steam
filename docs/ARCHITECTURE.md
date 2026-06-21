@@ -8,7 +8,7 @@
 │                          │        │                              │        │                     │
 │  content.js ─┐           │ HTTP   │  /api/profit/{appid}         │ HTTP   │  store appdetails   │
 │              ├─► SW ─────┼───────►│   ├─ caché (aiocache, TTL)   ├───────►│  market search      │
-│  popup.js ───┘           │        │   ├─ throttle (priceoverview)│        │  market priceovervw │
+│  popup.js ───┘           │        │   ├─ throttle (por host)     │        │  market priceovervw │
 │  chrome.storage (TTL 1h) │        │   └─ parser + cálculo        │        │                     │
 └─────────────────────────┘        └──────────────────────────────┘        └─────────────────────┘
 ```
@@ -33,7 +33,7 @@ permite:
 | `app/config.py` | `Settings` (pydantic-settings): moneda, TTLs, throttle, base URLs |
 | `app/models.py` | Schemas pydantic v2 (`CardPrice`, `ProfitResponse`) |
 | `app/cache.py` | Wrapper de aiocache (`get_or_set` read-through con TTL) |
-| `app/throttle.py` | `AsyncThrottle` (semáforo + intervalo mínimo) para priceoverview |
+| `app/throttle.py` | `AsyncThrottle` (semáforo + intervalo mínimo) **por host** de Steam |
 | `app/steam/client.py` | Cliente httpx async compartido; reintentos + backoff ante 429/5xx |
 | `app/steam/store.py` | `appdetails` → nombre, precio y `type` del juego (para descartar DLCs) |
 | `app/steam/market.py` | `search/render` → lista de cromos; `priceoverview` → precio por cromo |
@@ -93,10 +93,14 @@ ejecuta la corutina, guarda y devuelve. En v1 la caché es **en memoria del proc
 
 ### Rate limiting y resiliencia
 
-- `AsyncThrottle` = semáforo (concurrencia) + intervalo mínimo entre requests. Por
-  defecto: 1 request cada 3s para `priceoverview`.
-- `client.get_json` reintenta ante **429** y **5xx** con **backoff exponencial**
-  (`backoff_base ** intento`), hasta `max_retries`.
+- **Throttle por host**: `client.get_json` aplica un `AsyncThrottle` (semáforo +
+  intervalo mínimo) **por cada host de Steam**, así *toda* request —no solo
+  `priceoverview`— queda espaciada y no se generan ráfagas que disparan 429. Por
+  defecto: `steamcommunity.com` (priceoverview/search) 1 req/3s; `store.steampowered.com`
+  (appdetails) 1 req/1,5s. Cada host se limita por separado (tienen rate limits propios).
+- `client.get_json` reintenta ante **429** (honrando el header **`Retry-After`**), **5xx**
+  y errores de red, con **backoff exponencial** topeado (`min(backoff_base ** intento,
+  backoff_max)`), hasta `max_retries`.
 - `User-Agent` explícito en todas las requests.
 
 ### Parser robusto

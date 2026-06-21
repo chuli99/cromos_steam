@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from ..config import settings
+from ..throttle import get_throttle
 
 # Cliente único reutilizado (mantiene el pool de conexiones).
 _client: httpx.AsyncClient | None = None
@@ -36,25 +37,47 @@ async def close_client() -> None:
         _client = None
 
 
-async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
-    """GET que devuelve JSON, con reintentos y backoff exponencial.
+def _backoff(attempt: int) -> float:
+    """Backoff exponencial con tope: ``min(base ** intento, backoff_max)``."""
+    return min(settings.backoff_base ** attempt, settings.backoff_max)
 
-    Reintenta ante 429 y 5xx esperando ``backoff_base ** intento`` segundos.
+
+def _retry_after(resp: httpx.Response, attempt: int) -> float:
+    """Segundos a esperar ante un 429: honra ``Retry-After`` si viene, si no backoff."""
+    raw = resp.headers.get("Retry-After")
+    if raw:
+        try:
+            return min(float(raw), settings.backoff_max)
+        except ValueError:
+            pass
+    return _backoff(attempt)
+
+
+async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
+    """GET que devuelve JSON, con throttle por host, reintentos y backoff.
+
+    - **Throttle por host**: cada request a Steam respeta el intervalo mínimo del
+      host (community/store se limitan por separado), evitando ráfagas que disparan 429.
+    - Reintenta ante 429 (honrando ``Retry-After``), 5xx y errores de red.
+
     Lanza la última excepción si se agotan los reintentos.
     """
     client = get_client()
+    throttle = get_throttle(url)
     last_exc: Exception | None = None
 
     for attempt in range(settings.max_retries):
         try:
-            resp = await client.get(url, params=params)
+            # El throttle espacia el inicio de cada request al host.
+            async with throttle:
+                resp = await client.get(url, params=params)
 
             if resp.status_code == 429:
-                # Rate limited: esperar y reintentar.
-                await asyncio.sleep(settings.backoff_base ** attempt)
+                # Rate limited: esperar (Retry-After o backoff) y reintentar.
                 last_exc = httpx.HTTPStatusError(
                     "429 Too Many Requests", request=resp.request, response=resp
                 )
+                await asyncio.sleep(_retry_after(resp, attempt))
                 continue
 
             resp.raise_for_status()
@@ -64,13 +87,13 @@ async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
             last_exc = exc
             # 5xx: reintentar; otros 4xx: abortar.
             if exc.response is not None and 500 <= exc.response.status_code < 600:
-                await asyncio.sleep(settings.backoff_base ** attempt)
+                await asyncio.sleep(_backoff(attempt))
                 continue
             raise
         except httpx.TransportError as exc:
             # Timeout / error de red: reintentar.
             last_exc = exc
-            await asyncio.sleep(settings.backoff_base ** attempt)
+            await asyncio.sleep(_backoff(attempt))
 
     if last_exc is not None:
         raise last_exc

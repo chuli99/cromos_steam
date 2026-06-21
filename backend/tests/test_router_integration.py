@@ -217,6 +217,26 @@ async def test_include_foils_sin_foils_no_rompe(client: AsyncClient, steam: Fake
     assert foil_summary == {"total_foils": 0, "avg_foil_price": 0.0, "net_avg_foil_price": 0.0, "foils": []}
 
 
+async def test_reintenta_ante_429(
+    client: AsyncClient, steam: FakeSteam, monkeypatch: pytest.MonkeyPatch
+):
+    """Un 429 transitorio (rate limit) se reintenta y termina respondiendo 200."""
+    async def _no_sleep(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(steam_client.asyncio, "sleep", _no_sleep)
+
+    # appdetails recibe 429 dos veces y a la 3ª responde normal.
+    steam.fail_sequence["/api/appdetails"] = [429, 429]
+    steam.appdetails = make_appdetails(APPID, final_cents=299)
+    steam.search = make_search(CARDS[:1])
+    steam.prices = {CARDS[0]: make_price()}
+
+    resp = await client.get(f"/api/profit/{APPID}")
+    assert resp.status_code == 200
+    assert steam.calls["/api/appdetails"] == 3
+
+
 async def test_health(client: AsyncClient):
     """Healthcheck simple."""
     resp = await client.get("/health")

@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from ..config import settings
-from ..throttle import priceoverview_throttle
 from .client import get_json
 
 
@@ -49,7 +48,8 @@ async def fetch_card_list(appid: int, foil: bool = False) -> list[str]:
 async def fetch_card_price(market_hash_name: str) -> dict[str, Any] | None:
     """Devuelve el JSON crudo de priceoverview para un cromo.
 
-    Pasa por el throttle global para respetar el rate limit de Steam.
+    ``get_json`` ya aplica el throttle del host (steamcommunity.com) para respetar
+    el rate limit de Steam.
     """
     url = f"{settings.steam_community_base}/market/priceoverview/"
     params = {
@@ -57,6 +57,5 @@ async def fetch_card_price(market_hash_name: str) -> dict[str, Any] | None:
         "currency": settings.currency,
         "market_hash_name": market_hash_name,
     }
-    async with priceoverview_throttle:
-        data = await get_json(url, params)
+    data = await get_json(url, params)
     return data if isinstance(data, dict) else None

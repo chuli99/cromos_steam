@@ -14,9 +14,10 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app import cache as cache_module
+from app import throttle as throttle_module
+from app.config import settings as app_settings
 from app.main import app
 from app.steam import client as steam_client
-from app.throttle import priceoverview_throttle
 
 
 class FakeSteam:
@@ -104,13 +105,16 @@ async def client(steam: FakeSteam) -> AsyncIterator[AsyncClient]:
     """Cliente HTTP async contra la app, con la red de Steam mockeada.
 
     Reemplaza el cliente httpx compartido por uno con ``MockTransport``, limpia la
-    caché y anula el intervalo del throttle para que los tests sean rápidos.
+    caché y anula los intervalos de throttle (por host) para que los tests sean rápidos.
     """
     steam_client._client = httpx.AsyncClient(transport=httpx.MockTransport(steam.handler))
 
     await cache_module.clear()
-    original_interval = priceoverview_throttle._interval
-    priceoverview_throttle._interval = 0.0
+    # Throttles por host a 0s: se recrean perezosamente con la config actual.
+    original = (app_settings.community_interval, app_settings.store_interval)
+    app_settings.community_interval = 0.0
+    app_settings.store_interval = 0.0
+    throttle_module.reset_throttles()
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -118,5 +122,6 @@ async def client(steam: FakeSteam) -> AsyncIterator[AsyncClient]:
         yield ac
 
     await steam_client.close_client()
-    priceoverview_throttle._interval = original_interval
+    app_settings.community_interval, app_settings.store_interval = original
+    throttle_module.reset_throttles()
     await cache_module.clear()

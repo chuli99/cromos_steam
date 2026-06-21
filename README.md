@@ -141,7 +141,9 @@ Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env
 | `SCP_CACHE_TTL_CARDS` | `21600` (6h) | TTL del precio de cromos |
 | `SCP_CACHE_TTL_GAME` | `3600` (1h) | TTL del precio del juego |
 | `SCP_CACHE_TTL_CARD_LIST` | `86400` (24h) | TTL de la lista de cromos |
-| `SCP_THROTTLE_INTERVAL` | `3.0` | Segundos mínimos entre requests a priceoverview |
+| `SCP_COMMUNITY_INTERVAL` | `3.0` | Segundos mínimos entre requests a `steamcommunity.com` (priceoverview/search) |
+| `SCP_STORE_INTERVAL` | `1.5` | Segundos mínimos entre requests a `store.steampowered.com` (appdetails) |
+| `SCP_MAX_RETRIES` | `4` | Reintentos ante 429/5xx/red |
 | `SCP_FEE_RATE` | `0.15` | Fee de Steam |
 | `SCP_DROP_RATIO` | `0.5` | Proporción del set que dropea |
 
@@ -198,9 +200,11 @@ hasta que lo detengas.
 siguiente consulta hasta que vuelve la anterior) y respeta un **delay configurable**
 entre juegos (popup → *"Delay entre juegos al escanear (ms)"*, default 800 ms), con
 **backoff** si el backend falla. Como el backend cachea, los juegos ya consultados se
-resuelven al instante; los nuevos tardan porque se pide el precio de cada cromo
-respetando el throttle (1 req/3 s al endpoint que Steam limita). Detectar un DLC cuesta
-solo una consulta de `appdetails` (se corta antes de pedir precios de cromos).
+resuelven al instante; los nuevos tardan porque el backend **throttlea por host**
+(toda request a Steam respeta un intervalo mínimo: 3 s en `steamcommunity.com` —
+priceoverview/search— y 1,5 s en `store.steampowered.com` —appdetails—) y además
+reintenta honrando `Retry-After` ante un 429. Detectar un DLC cuesta solo una consulta
+de `appdetails` (se corta antes de pedir precios de cromos).
 
 ### Configurar la URL del backend
 

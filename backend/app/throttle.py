@@ -1,18 +1,20 @@
-"""Rate limiter async para el endpoint priceoverview de Steam.
+"""Rate limiter async por host de Steam.
 
-priceoverview tiene el límite más agresivo (~20 req/min). Este throttle combina:
-- un **semáforo** que limita la concurrencia, y
-- un **intervalo mínimo** entre el inicio de requests consecutivos.
+Cada host de Steam tiene su propio rate limit, así que se throttlea por separado:
+- ``steamcommunity.com`` (priceoverview + search/render): el límite más agresivo (~20 req/min).
+- ``store.steampowered.com`` (appdetails): límite más laxo pero igual existe.
 
-Se usa como context manager async::
+``AsyncThrottle`` combina un **semáforo** (concurrencia) con un **intervalo mínimo**
+entre el inicio de requests consecutivos. Se usa como context manager async::
 
-    async with priceoverview_throttle:
+    async with get_throttle(url):
         ...  # request a Steam
 """
 from __future__ import annotations
 
 import asyncio
 import time
+from urllib.parse import urlsplit
 
 
 class AsyncThrottle:
@@ -39,11 +41,29 @@ class AsyncThrottle:
         self._semaphore.release()
 
 
-# Throttle global compartido para priceoverview. Se inicializa en main.py con los
-# valores de config; mientras tanto queda con defaults seguros.
 from .config import settings  # noqa: E402  (import tardío para evitar ciclos)
 
-priceoverview_throttle = AsyncThrottle(
-    interval=settings.throttle_interval,
-    concurrency=settings.throttle_concurrency,
-)
+# Registro de throttles, uno por host. Se crean de forma perezosa.
+_throttles: dict[str, AsyncThrottle] = {}
+
+
+def _interval_for(host: str) -> float:
+    """Intervalo mínimo según el host (community es el más restrictivo)."""
+    if "steamcommunity" in host:
+        return settings.community_interval
+    return settings.store_interval
+
+
+def get_throttle(url: str) -> AsyncThrottle:
+    """Devuelve (creando si hace falta) el throttle del host de ``url``."""
+    host = urlsplit(url).netloc.lower()
+    throttle = _throttles.get(host)
+    if throttle is None:
+        throttle = AsyncThrottle(_interval_for(host), concurrency=settings.throttle_concurrency)
+        _throttles[host] = throttle
+    return throttle
+
+
+def reset_throttles() -> None:
+    """Limpia el registro (los throttles se recrean con la config actual)."""
+    _throttles.clear()
