@@ -21,6 +21,7 @@
     stop: false,
     onlyProfit: false,
     sack: null,             // { price, price_per_gem, gems, currency }
+    sackError: null,        // motivo si falló la carga del saco (para mostrarlo)
     games: [],              // [{ appid, name, gems }]
     results: [],            // [{ appid, name, gemCost, profit, profitPositive, ... , status }]
   };
@@ -147,6 +148,26 @@
     });
 
     panel.querySelector(".scp-bp-close").addEventListener("click", () => panel.remove());
+
+    // Cargar el precio del saco al abrir (no solo al escanear): así se ve de entrada
+    // y, si falla, el motivo queda visible para diagnosticar.
+    loadSack();
+  }
+
+  // Pide el precio del Saco de Gemas y lo renderiza. Guarda el error si falla.
+  async function loadSack() {
+    $sack.textContent = "Saco de gemas: cargando…";
+    $sack.classList.remove("scp-bp-sack-err");
+    const resp = await querySack();
+    if (resp && resp.ok) {
+      state.sack = resp.data;
+      state.sackError = null;
+    } else {
+      state.sack = null;
+      state.sackError = (resp && resp.error) || "no disponible";
+    }
+    renderSack();
+    return state.sack;
   }
 
   function renderSack() {
@@ -156,7 +177,7 @@
         `· ${fmt(state.sack.price_per_gem, state.sack.currency)}/gema`;
       $sack.classList.remove("scp-bp-sack-err");
     } else {
-      $sack.textContent = "Saco de gemas: no disponible";
+      $sack.textContent = `Saco de gemas: ${state.sackError || "no disponible"}`;
       $sack.classList.add("scp-bp-sack-err");
     }
   }
@@ -280,10 +301,9 @@
     state.results = [];
     $startBtn.textContent = "Detener";
 
-    // Precio del saco (referencia para valuar las gemas). Una sola vez.
-    const sackResp = await querySack();
-    state.sack = sackResp && sackResp.ok ? sackResp.data : null;
-    renderSack();
+    // Precio del saco (referencia para valuar las gemas). Si no se cargó al abrir
+    // (o falló), reintentar acá.
+    if (!state.sack) await loadSack();
 
     const { scanDelayMs } = await chrome.storage.local.get("scanDelayMs");
     const delay = Number.isFinite(scanDelayMs) && scanDelayMs >= 0 ? scanDelayMs : DEFAULT_DELAY_MS;

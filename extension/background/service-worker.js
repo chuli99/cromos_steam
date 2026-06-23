@@ -4,11 +4,32 @@
 
 const DEFAULT_BACKEND_URL = "http://localhost:8000";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, alineado con el TTL sugerido del backend.
+const FETCH_TIMEOUT_MS = 20000;      // corta requests colgadas (backend esperando un cooldown de Steam)
 
 // URL del backend configurable desde el popup (chrome.storage.local).
 async function getBackendUrl() {
   const { backendUrl } = await chrome.storage.local.get("backendUrl");
   return (backendUrl || DEFAULT_BACKEND_URL).replace(/\/+$/, "");
+}
+
+// fetch con timeout (AbortController): evita que la UI quede colgada si el backend
+// se demora (p. ej. reintentando ante un 429 de Steam).
+async function fetchWithTimeout(url) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Mensaje de error de red unificado (distingue timeout de backend caído).
+function backendError(err, base) {
+  if (err && err.name === "AbortError") {
+    return "El backend tardó demasiado (posible rate limit de Steam). Reintentá en un rato.";
+  }
+  return `No se pudo contactar el backend (${base}). ¿Está levantado?`;
 }
 
 // Devuelve la respuesta de profit, usando caché si está fresca.
@@ -35,7 +56,7 @@ async function getProfit(appid, foilsOverride) {
   const base = await getBackendUrl();
   const query = foils ? "?include_foils=true" : "";
   try {
-    const resp = await fetch(`${base}/api/profit/${appid}${query}`);
+    const resp = await fetchWithTimeout(`${base}/api/profit/${appid}${query}`);
     if (!resp.ok) {
       // Propagar el detalle del backend (ej: 422 free-to-play, 404 sin cromos).
       const body = await resp.json().catch(() => ({}));
@@ -53,8 +74,8 @@ async function getProfit(appid, foilsOverride) {
     await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), result } });
     return { ...result, cached: false };
   } catch (err) {
-    // Error de red (transitorio): el backend probablemente no está levantado. No cachear.
-    return { ok: false, error: `No se pudo contactar el backend (${base}). ¿Está levantado?` };
+    // Error de red o timeout (transitorio): no cachear.
+    return { ok: false, error: backendError(err, base) };
   }
 }
 
@@ -63,14 +84,14 @@ async function getProfit(appid, foilsOverride) {
 async function getSackPrice() {
   const base = await getBackendUrl();
   try {
-    const resp = await fetch(`${base}/api/gems/sack`);
+    const resp = await fetchWithTimeout(`${base}/api/gems/sack`);
     if (!resp.ok) {
       const body = await resp.json().catch(() => ({}));
       return { ok: false, error: body.detail || `HTTP ${resp.status}`, status: resp.status };
     }
     return { ok: true, data: await resp.json() };
   } catch (err) {
-    return { ok: false, error: `No se pudo contactar el backend (${base}). ¿Está levantado?` };
+    return { ok: false, error: backendError(err, base) };
   }
 }
 
@@ -87,7 +108,7 @@ async function getBooster(appid, gemCost, name) {
   const base = await getBackendUrl();
   const qs = new URLSearchParams({ gem_cost: String(gemCost), name }).toString();
   try {
-    const resp = await fetch(`${base}/api/booster/${appid}?${qs}`);
+    const resp = await fetchWithTimeout(`${base}/api/booster/${appid}?${qs}`);
     if (!resp.ok) {
       // Errores (incl. 429/red): NO se cachean -> se reintentan en el próximo escaneo.
       const body = await resp.json().catch(() => ({}));
@@ -98,7 +119,7 @@ async function getBooster(appid, gemCost, name) {
     await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), result } });
     return { ...result, cached: false };
   } catch (err) {
-    return { ok: false, error: `No se pudo contactar el backend (${base}). ¿Está levantado?` };
+    return { ok: false, error: backendError(err, base) };
   }
 }
 
