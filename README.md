@@ -172,7 +172,7 @@ Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env
 | `SCP_CACHE_TTL_CARDS` | `21600` (6h) | TTL del precio de cromos |
 | `SCP_CACHE_TTL_GAME` | `3600` (1h) | TTL del precio del juego |
 | `SCP_CACHE_TTL_CARD_LIST` | `86400` (24h) | TTL de la lista de cromos |
-| `SCP_COMMUNITY_INTERVAL` | `5.0` | Segundos mínimos entre requests a `steamcommunity.com` (priceoverview/search; ~12 req/min). Subilo (ej. `6.0`) si seguís viendo 429 en escaneos largos |
+| `SCP_COMMUNITY_INTERVAL` | `6.0` | Segundos mínimos entre requests a `steamcommunity.com` (priceoverview/search; ~10 req/min). Bajalo si querés más velocidad y poco volumen; subilo si aún ves 429 |
 | `SCP_STORE_INTERVAL` | `2.0` | Segundos mínimos entre requests a `store.steampowered.com` (appdetails; ~150 req/5min, bajo el máximo ~200) |
 | `SCP_MAX_RETRIES` | `3` | Reintentos ante 429/5xx/red (pocos: una request no debe colgarse minutos) |
 | `SCP_COOLDOWN_429` | `20.0` | Pausa del host ante un 429 sin `Retry-After` (cooldown adaptativo) |
@@ -234,7 +234,7 @@ entre juegos (popup → *"Delay entre juegos al escanear (ms)"*, default 800 ms)
 **backoff** si el backend falla. Como el backend cachea, los juegos ya consultados se
 resuelven al instante; los nuevos tardan porque el backend **throttlea por host**
 (toda request a Steam respeta un intervalo mínimo, por debajo del máximo de Steam:
-~5 s en `steamcommunity.com` —priceoverview/search, ~12 req/min— y ~2 s en
+~6 s en `steamcommunity.com` —priceoverview/search, ~10 req/min— y ~2 s en
 `store.steampowered.com` —appdetails—). Ante un **429**, el host entra en **cooldown
 adaptativo**: se pausa (lo que diga `Retry-After`, o 60 s) y sube su intervalo, que
 luego decae al normalizarse. Detectar un DLC cuesta solo una consulta de `appdetails`

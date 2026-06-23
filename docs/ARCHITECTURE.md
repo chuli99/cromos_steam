@@ -100,7 +100,7 @@ ejecuta la corutina, guarda y devuelve. En v1 la caché es **en memoria del proc
   intervalos por defecto se eligen **bien por debajo** del máximo de Steam (el límite es
   una ventana deslizante: sostenerlo cerca del tope igual lo dispara y bloquea la IP por
   minutos, así que conviene prevenir, sobre todo en escaneos largos de cientos de ítems):
-  `steamcommunity.com` (priceoverview/search) ~1 req/5s (≈12/min, máx ~20);
+  `steamcommunity.com` (priceoverview/search) ~1 req/6s (≈10/min, máx ~20);
   `store.steampowered.com` (appdetails) ~1 req/2s (≈150/5min, máx ~200). Cada host se
   limita por separado (tienen rate limits propios).
 - **Cooldown adaptativo ante 429**: cuando Steam responde 429, el throttle del host

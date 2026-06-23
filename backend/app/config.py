@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # tope (~20 req/min), igual se dispara y bloquea la IP por varios minutos. Por eso
     # community va a ~12 req/min (5s): en escaneos largos (cientos de boosters/juegos)
     # previene el bloqueo en vez de tener que absorberlo.
-    community_interval: float = 5.0  # steamcommunity.com (priceoverview/search): ~12 req/min
+    community_interval: float = 6.0  # steamcommunity.com (priceoverview/search): ~10 req/min
     store_interval: float = 2.0      # store.steampowered.com (appdetails): ~150 req/5min
     throttle_concurrency: int = 1    # requests concurrentes por host
     # Pocos reintentos y cooldown corto: una request NO debe colgarse minutos esperando.
