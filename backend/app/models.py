@@ -28,6 +28,41 @@ class FoilSummary(BaseModel):
     foils: list[CardPrice]      # desglose por foil
 
 
+class GemSackPrice(BaseModel):
+    """Precio de referencia del Saco de Gemas (1000 gemas)."""
+
+    market_hash_name: str
+    gems: int                   # gemas que da el saco (1000)
+    price: float                # precio de mercado del saco
+    price_per_gem: float        # price / gems
+    currency: int
+
+
+class BoosterValue(BaseModel):
+    """Valor de un booster pack: costo en gemas vs precio de venta en el market.
+
+    Compara lo que cuesta crear el booster (sus gemas convertidas a dinero según el
+    precio del Saco de Gemas) contra lo que se obtendría vendiéndolo (precio de
+    mercado del booster pack, neto del fee de Steam). El costo en gemas y el nombre
+    del juego los provee la extensión leyéndolos de la página del booster creator.
+    """
+
+    appid: int
+    name: str
+    currency: int
+
+    gem_cost: int                      # costo del booster en gemas (de la página)
+    gem_price_per_1000: float | None   # precio del Saco de Gemas (1000 gemas)
+    gem_cost_value: float | None       # costo del booster en dinero
+
+    booster_price: float | None        # precio de venta del booster (lowest)
+    booster_net_price: float | None    # tras descontar el fee de Steam
+    fee_rate: float = Field(0.15)
+
+    profit: float | None               # booster_net_price - gem_cost_value
+    profit_positive: bool = False      # True si profit > 0
+
+
 class ProfitResponse(BaseModel):
     """Respuesta completa del cálculo de profit con todo el desglose."""
 

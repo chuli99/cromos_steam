@@ -13,6 +13,20 @@ from typing import Any
 from ..config import settings
 from .client import get_json
 
+# Saco de Gemas: ítem del market (appid 753) que entrega 1000 gemas. Su precio sirve
+# de referencia para valuar las gemas que cuesta crear un booster pack.
+GEM_SACK_HASH = "753-Sack of Gems"
+GEMS_PER_SACK = 1000
+
+
+def booster_hash_name(appid: int, game_name: str) -> str:
+    """``market_hash_name`` del booster pack de un juego (ítem vendible, appid 753).
+
+    Formato de Steam: ``"{appid}-{Nombre del juego} Booster Pack"`` (ej:
+    ``"570-Dota 2 Booster Pack"``). El nombre lo provee la página del booster creator.
+    """
+    return f"{appid}-{game_name} Booster Pack"
+
 
 async def fetch_card_list(appid: int, foil: bool = False) -> list[str]:
     """Devuelve los ``market_hash_name`` de los cromos del juego.
@@ -46,10 +60,11 @@ async def fetch_card_list(appid: int, foil: bool = False) -> list[str]:
 
 
 async def fetch_card_price(market_hash_name: str) -> dict[str, Any] | None:
-    """Devuelve el JSON crudo de priceoverview para un cromo.
+    """Devuelve el JSON crudo de priceoverview para un ítem del market (appid 753).
 
-    ``get_json`` ya aplica el throttle del host (steamcommunity.com) para respetar
-    el rate limit de Steam.
+    Es genérico: sirve para cromos, foils, el Saco de Gemas o un booster pack (todos
+    viven bajo ``appid=753``). ``get_json`` ya aplica el throttle del host
+    (steamcommunity.com) para respetar el rate limit de Steam.
     """
     url = f"{settings.steam_community_base}/market/priceoverview/"
     params = {

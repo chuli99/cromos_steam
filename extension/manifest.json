@@ -23,6 +23,12 @@
       "js": ["content/search.js"],
       "css": ["content/search.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://steamcommunity.com/tradingcards/boostercreator*"],
+      "js": ["content/booster.js"],
+      "css": ["content/booster.css"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

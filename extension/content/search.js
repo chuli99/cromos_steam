@@ -147,8 +147,9 @@
     panel.querySelector(".scp-sp-close").addEventListener("click", () => panel.remove());
   }
 
-  function renderProgress(done, total, withProfit) {
-    $progress.textContent = `${done}/${total} escaneados · ${withProfit} con profit`;
+  function renderProgress(done, total, withProfit, reused) {
+    $progress.textContent =
+      `${done}/${total} escaneados · ${withProfit} con profit · ${reused} en caché`;
   }
 
   function renderList() {
@@ -277,6 +278,7 @@
     const processed = new Set();
     let done = 0;
     let withProfit = 0;
+    let reused = 0;
     let backoff = 0;
 
     while (!state.stop) {
@@ -302,6 +304,9 @@
 
         const resp = await queryProfit(appid);
         const entry = handleResult(appid, row, resp);
+        // ``cached`` = el resultado salió de la caché reciente (no pegó a Steam).
+        const fromCache = Boolean(resp && resp.cached);
+        if (fromCache) reused++;
 
         if (entry.status === "ok" && entry.profitPositive) withProfit++;
         if (resp && (resp.ok || resp.status === 404 || resp.status === 422)) {
@@ -312,18 +317,21 @@
         }
 
         done++;
-        renderProgress(done, state.byAppid.size, withProfit);
+        renderProgress(done, state.byAppid.size, withProfit, reused);
         renderList();
 
         if (state.stop) break;
-        await sleep(delay + backoff); // pausa entre juegos (+ backoff si hubo error)
+        // Solo pausar cuando se consultó de verdad: los ya escaneados (caché) no
+        // re-consultan ni gastan el delay; solo se reintenta lo que dio error.
+        if (!fromCache) await sleep(delay + backoff);
       }
     }
 
     state.running = false;
     state.stop = false;
     $startBtn.textContent = "Escanear resultados";
-    $progress.textContent = `Listo: ${done} escaneados · ${withProfit} con profit.`;
+    $progress.textContent =
+      `Listo: ${done} escaneados · ${withProfit} con profit · ${reused} reutilizados.`;
   }
 
   buildPanel();

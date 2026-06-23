@@ -26,8 +26,10 @@ async function getProfit(appid, foilsOverride) {
   // La key distingue por flag de foils: el desglose cambia según se pidan o no.
   const cacheKey = `profit:${appid}:${foils ? "f" : "n"}`;
   const stored = (await chrome.storage.local.get(cacheKey))[cacheKey];
-  if (stored && Date.now() - stored.ts < CACHE_TTL_MS) {
-    return { ok: true, data: stored.data, cached: true };
+  if (stored && stored.result && Date.now() - stored.ts < CACHE_TTL_MS) {
+    // Resultado reciente (positivo, negativo, sin cromos o F2P/DLC): se reutiliza
+    // sin volver a pegarle a Steam. ``cached: true`` avisa al escáner para no esperar.
+    return { ...stored.result, cached: true };
   }
 
   const base = await getBackendUrl();
@@ -37,13 +39,65 @@ async function getProfit(appid, foilsOverride) {
     if (!resp.ok) {
       // Propagar el detalle del backend (ej: 422 free-to-play, 404 sin cromos).
       const body = await resp.json().catch(() => ({}));
+      const result = { ok: false, error: body.detail || `HTTP ${resp.status}`, status: resp.status };
+      // Cachear solo resultados DEFINITIVOS de negocio (404 sin cromos, 422 F2P/DLC):
+      // no son errores, no tiene sentido re-escanearlos. Los transitorios (429/5xx)
+      // NO se cachean, así el próximo escaneo los reintenta.
+      if (resp.status === 404 || resp.status === 422) {
+        await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), result } });
+      }
+      return { ...result, cached: false };
+    }
+    const data = await resp.json();
+    const result = { ok: true, data };
+    await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), result } });
+    return { ...result, cached: false };
+  } catch (err) {
+    // Error de red (transitorio): el backend probablemente no está levantado. No cachear.
+    return { ok: false, error: `No se pudo contactar el backend (${base}). ¿Está levantado?` };
+  }
+}
+
+// Precio de referencia del Saco de Gemas (1000 gemas). Sin caché local: el backend
+// ya lo cachea y el panel lo pide una sola vez por escaneo.
+async function getSackPrice() {
+  const base = await getBackendUrl();
+  try {
+    const resp = await fetch(`${base}/api/gems/sack`);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      return { ok: false, error: body.detail || `HTTP ${resp.status}`, status: resp.status };
+    }
+    return { ok: true, data: await resp.json() };
+  } catch (err) {
+    return { ok: false, error: `No se pudo contactar el backend (${base}). ¿Está levantado?` };
+  }
+}
+
+// Valor de un booster pack (costo en gemas vs precio de venta). Cachea por
+// appid+gemas en chrome.storage.local con el mismo TTL que el profit.
+async function getBooster(appid, gemCost, name) {
+  const cacheKey = `booster:${appid}:${gemCost}`;
+  const stored = (await chrome.storage.local.get(cacheKey))[cacheKey];
+  if (stored && stored.result && Date.now() - stored.ts < CACHE_TTL_MS) {
+    // Reciente: se reutiliza sin re-consultar. ``cached: true`` evita la espera.
+    return { ...stored.result, cached: true };
+  }
+
+  const base = await getBackendUrl();
+  const qs = new URLSearchParams({ gem_cost: String(gemCost), name }).toString();
+  try {
+    const resp = await fetch(`${base}/api/booster/${appid}?${qs}`);
+    if (!resp.ok) {
+      // Errores (incl. 429/red): NO se cachean -> se reintentan en el próximo escaneo.
+      const body = await resp.json().catch(() => ({}));
       return { ok: false, error: body.detail || `HTTP ${resp.status}`, status: resp.status };
     }
     const data = await resp.json();
-    await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), data } });
-    return { ok: true, data, cached: false };
+    const result = { ok: true, data };
+    await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), result } });
+    return { ...result, cached: false };
   } catch (err) {
-    // Error de red: el backend probablemente no está levantado.
     return { ok: false, error: `No se pudo contactar el backend (${base}). ¿Está levantado?` };
   }
 }
@@ -54,9 +108,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getProfit(msg.appid, msg.includeFoils).then(sendResponse);
     return true; // respuesta asíncrona
   }
+  if (msg && msg.type === "GET_BOOSTER") {
+    getBooster(msg.appid, msg.gemCost, msg.name).then(sendResponse);
+    return true; // respuesta asíncrona
+  }
+  if (msg && msg.type === "GET_SACK") {
+    getSackPrice().then(sendResponse);
+    return true; // respuesta asíncrona
+  }
   if (msg && msg.type === "CLEAR_CACHE") {
     chrome.storage.local.get(null).then((all) => {
-      const keys = Object.keys(all).filter((k) => k.startsWith("profit:"));
+      const keys = Object.keys(all).filter(
+        (k) => k.startsWith("profit:") || k.startsWith("booster:")
+      );
       chrome.storage.local.remove(keys).then(() => sendResponse({ ok: true, cleared: keys.length }));
     });
     return true;

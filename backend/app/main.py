@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import profit
+from .routers import booster, profit
 from .steam.client import close_client
 
 
@@ -36,6 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(profit.router, prefix="/api")
+app.include_router(booster.router, prefix="/api")
 
 
 @app.get("/health")
