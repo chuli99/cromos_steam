@@ -174,8 +174,8 @@ Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env
 | `SCP_CACHE_TTL_CARD_LIST` | `86400` (24h) | TTL de la lista de cromos |
 | `SCP_COMMUNITY_INTERVAL` | `5.0` | Segundos mínimos entre requests a `steamcommunity.com` (priceoverview/search; ~12 req/min). Subilo (ej. `6.0`) si seguís viendo 429 en escaneos largos |
 | `SCP_STORE_INTERVAL` | `2.0` | Segundos mínimos entre requests a `store.steampowered.com` (appdetails; ~150 req/5min, bajo el máximo ~200) |
-| `SCP_MAX_RETRIES` | `6` | Reintentos ante 429/5xx/red (absorbe bloqueos transitorios) |
-| `SCP_COOLDOWN_429` | `60.0` | Pausa del host ante un 429 sin `Retry-After` (cooldown adaptativo) |
+| `SCP_MAX_RETRIES` | `3` | Reintentos ante 429/5xx/red (pocos: una request no debe colgarse minutos) |
+| `SCP_COOLDOWN_429` | `20.0` | Pausa del host ante un 429 sin `Retry-After` (cooldown adaptativo) |
 | `SCP_FEE_RATE` | `0.15` | Fee de Steam |
 | `SCP_DROP_RATIO` | `0.5` | Proporción del set que dropea |
 

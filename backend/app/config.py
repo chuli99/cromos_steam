@@ -34,10 +34,13 @@ class Settings(BaseSettings):
     community_interval: float = 5.0  # steamcommunity.com (priceoverview/search): ~12 req/min
     store_interval: float = 2.0      # store.steampowered.com (appdetails): ~150 req/5min
     throttle_concurrency: int = 1    # requests concurrentes por host
-    max_retries: int = 6             # reintentos ante 429 / 5xx / red (absorbe bloqueos transitorios)
+    # Pocos reintentos y cooldown corto: una request NO debe colgarse minutos esperando.
+    # El cooldown igual queda "pegado" al host (espacia las siguientes requests), así no
+    # se pierde la protección, y el cliente reintenta lo que falló (la caché evita repetir).
+    max_retries: int = 3             # reintentos ante 429 / 5xx / red
     backoff_base: float = 2.0        # base del backoff exponencial (s)
-    backoff_max: float = 60.0        # tope del backoff / Retry-After (s)
-    cooldown_429: float = 60.0       # pausa del host ante un 429 sin Retry-After (s)
+    backoff_max: float = 30.0        # tope del backoff / Retry-After (s)
+    cooldown_429: float = 20.0       # pausa del host ante un 429 sin Retry-After (s)
 
     # --- Cálculo del profit ---
     fee_rate: float = 0.15   # fee de Steam (5% + 10%)
