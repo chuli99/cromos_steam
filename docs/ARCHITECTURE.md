@@ -39,6 +39,7 @@ permite:
 | `app/steam/market.py` | `search/render` → lista de cromos; `priceoverview` → precio por cromo |
 | `app/steam/parser.py` | Parseo de precios localizados; aplicación del fee |
 | `app/routers/profit.py` | `GET /api/profit/{appid}`: orquestación + `compute_profit` (pura) |
+| `app/routers/booster.py` | `GET /api/gems/sack` y `GET /api/booster/{appid}`: valor de booster packs (gemas vs market) |
 
 ### Endpoints de Steam usados
 
@@ -96,13 +97,14 @@ ejecuta la corutina, guarda y devuelve. En v1 la caché es **en memoria del proc
 - **Throttle por host**: `client.get_json` aplica un `AsyncThrottle` (semáforo +
   intervalo mínimo) **por cada host de Steam**, así *toda* request —no solo
   `priceoverview`— queda espaciada y no se generan ráfagas que disparan 429. Los
-  intervalos por defecto se eligen **por debajo** del máximo de Steam (deja margen,
-  porque el límite es una ventana deslizante y baja en horario pico):
-  `steamcommunity.com` (priceoverview/search) ~1 req/3,5s (≈17/min, máx ~20);
+  intervalos por defecto se eligen **bien por debajo** del máximo de Steam (el límite es
+  una ventana deslizante: sostenerlo cerca del tope igual lo dispara y bloquea la IP por
+  minutos, así que conviene prevenir, sobre todo en escaneos largos de cientos de ítems):
+  `steamcommunity.com` (priceoverview/search) ~1 req/5s (≈12/min, máx ~20);
   `store.steampowered.com` (appdetails) ~1 req/2s (≈150/5min, máx ~200). Cada host se
   limita por separado (tienen rate limits propios).
 - **Cooldown adaptativo ante 429**: cuando Steam responde 429, el throttle del host
-  se *penaliza* (`penalize`): entra en cooldown por `Retry-After` (o `cooldown_429`, 30s
+  se *penaliza* (`penalize`): entra en cooldown por `Retry-After` (o `cooldown_429`, 60s
   por defecto) y **sube su intervalo** (× `_BUMP`, con tope); con cada éxito (`relax`)
   el intervalo **decae** hacia el base. Esto replica el cooldown de Steam y absorbe los
   picos sin frenar el régimen normal.
@@ -149,6 +151,27 @@ datos mockeados (`tests/test_profit.py`).
 
 ---
 
+## Modelo de valor de booster packs
+
+Un **booster pack** se crea gastando gemas (costo fijo por juego, ej. 400) y luego se
+puede vender en el market. El valor se calcula así:
+
+```
+precio_gema   = precio_saco / 1000          # Saco de Gemas = ítem 753 del market
+costo_gemas   = (gem_cost / 1000) * precio_saco
+venta_neta    = precio_booster / (1 + fee_rate)   # booster pack = ítem 753 del market
+profit        = venta_neta - costo_gemas
+```
+
+- El `gem_cost` y el `name` de cada juego los lee la extensión de la página del booster
+  creator (`CBoosterCreatorPage.Init([...])`), no la API de Steam.
+- El `market_hash_name` del booster se arma como `"{appid}-{nombre} Booster Pack"`.
+- Tanto el Saco de Gemas como el booster usan `priceoverview` (mismo throttle/caché que
+  los cromos): el escaneo de boosters solo pega a `steamcommunity.com`, una consulta por
+  juego (el precio del saco se cachea y se pide una sola vez).
+
+---
+
 ## Extensión (Chrome MV3)
 
 | Componente | Rol |
@@ -157,7 +180,9 @@ datos mockeados (`tests/test_profit.py`).
 | `content/overlay.css` | Estilos del overlay (fijo abajo a la derecha) |
 | `content/search.js` | Página de búsqueda (`/search…`): panel que escanea los resultados (cargando más por scroll), anota cada fila con un badge de profit y oculta los DLC |
 | `content/search.css` | Estilos del panel del escáner y de los badges por fila |
-| `background/service-worker.js` | Llama a `/api/profit/{appid}`; cachea en `chrome.storage.local` (TTL 1h). Acepta override de foils (el escaneo pide siempre sin foils) |
+| `content/booster.js` | Booster creator (`/tradingcards/boostercreator`): lee los juegos elegibles de la página y escanea el valor de cada booster (gemas vs market) |
+| `content/booster.css` | Estilos del panel del escáner de boosters |
+| `background/service-worker.js` | Llama a `/api/profit/{appid}`, `/api/booster/{appid}` y `/api/gems/sack`; cachea en `chrome.storage.local` (TTL 1h). Acepta override de foils (el escaneo pide siempre sin foils) |
 | `popup/*` | Configura URL del backend, toggle de foils, delay de escaneo y limpieza de caché local |
 
 **Flujo (página de juego):** `content.js` extrae el appid →
@@ -175,7 +200,12 @@ responde `422` por `type=dlc`) y se ocultan. Esto, sumado al caché + throttle d
 backend, mantiene el ritmo dentro del rate limit de Steam (el cuello de botella real
 es `priceoverview`, ~20 req/min). Los juegos ya cacheados se resuelven al instante.
 
-La caché del cliente (TTL 1h) evita repegarle al backend al revisitar la misma página.
+La caché del cliente (`chrome.storage.local`, TTL 1h) evita repegarle al backend al
+revisitar la misma página. Guarda los resultados **definitivos** (con precio, "sin
+cromos", F2P/DLC, "sin precio" de booster) pero **no** los errores transitorios
+(429/5xx/red): así, al re-escanear, los ya resueltos se reutilizan al instante (sin
+delay ni request a Steam) y solo se reintenta lo que falló. El service worker marca
+cada respuesta con `cached: true/false` para que el escáner sepa si debe esperar.
 
 ---
 

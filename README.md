@@ -129,6 +129,37 @@ Agrega al `ProfitResponse` el bloque `foils` (o `null` si no se pidió):
 }
 ```
 
+#### Booster packs (gemas)
+
+Dos endpoints para valuar la creación de **booster packs** con gemas, comparándola
+con su precio de venta en el market:
+
+```
+GET /api/gems/sack             # precio de referencia del Saco de Gemas (1000 gemas)
+GET /api/booster/{appid}?gem_cost=400&name=Dota%202
+```
+
+`/api/booster/{appid}` compara el **costo en gemas** del booster (`gem_cost`, valuado
+con el precio del Saco de Gemas) contra el **precio de venta** del booster pack (neto
+del fee). Devuelve un `BoosterValue`:
+
+```jsonc
+{
+  "appid": 570,
+  "name": "Dota 2",
+  "gem_cost": 400,
+  "gem_price_per_1000": 1.0,    // precio del saco
+  "gem_cost_value": 0.4,        // (400/1000) * precio_saco
+  "booster_price": 1.0,         // precio de venta del booster pack
+  "booster_net_price": 0.8696,  // tras descontar el fee de Steam
+  "profit": 0.4696,             // booster_net_price - gem_cost_value
+  "profit_positive": true
+}
+```
+
+> El `gem_cost` y el `name` los provee la extensión leyéndolos de la página del booster
+> creator. Si el booster no se vende en el market, `booster_price`/`profit` quedan en `null`.
+
 ### Configuración
 
 Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env`
@@ -141,10 +172,10 @@ Todo se configura por variables de entorno con prefijo `SCP_` o un archivo `.env
 | `SCP_CACHE_TTL_CARDS` | `21600` (6h) | TTL del precio de cromos |
 | `SCP_CACHE_TTL_GAME` | `3600` (1h) | TTL del precio del juego |
 | `SCP_CACHE_TTL_CARD_LIST` | `86400` (24h) | TTL de la lista de cromos |
-| `SCP_COMMUNITY_INTERVAL` | `3.5` | Segundos mínimos entre requests a `steamcommunity.com` (priceoverview/search; ~17 req/min, bajo el máximo de Steam ~20) |
+| `SCP_COMMUNITY_INTERVAL` | `5.0` | Segundos mínimos entre requests a `steamcommunity.com` (priceoverview/search; ~12 req/min). Subilo (ej. `6.0`) si seguís viendo 429 en escaneos largos |
 | `SCP_STORE_INTERVAL` | `2.0` | Segundos mínimos entre requests a `store.steampowered.com` (appdetails; ~150 req/5min, bajo el máximo ~200) |
-| `SCP_MAX_RETRIES` | `4` | Reintentos ante 429/5xx/red |
-| `SCP_COOLDOWN_429` | `30.0` | Pausa del host ante un 429 sin `Retry-After` (cooldown adaptativo) |
+| `SCP_MAX_RETRIES` | `6` | Reintentos ante 429/5xx/red (absorbe bloqueos transitorios) |
+| `SCP_COOLDOWN_429` | `60.0` | Pausa del host ante un 429 sin `Retry-After` (cooldown adaptativo) |
 | `SCP_FEE_RATE` | `0.15` | Fee de Steam |
 | `SCP_DROP_RATIO` | `0.5` | Proporción del set que dropea |
 
@@ -203,11 +234,38 @@ entre juegos (popup → *"Delay entre juegos al escanear (ms)"*, default 800 ms)
 **backoff** si el backend falla. Como el backend cachea, los juegos ya consultados se
 resuelven al instante; los nuevos tardan porque el backend **throttlea por host**
 (toda request a Steam respeta un intervalo mínimo, por debajo del máximo de Steam:
-~3,5 s en `steamcommunity.com` —priceoverview/search, ~17 req/min— y ~2 s en
+~5 s en `steamcommunity.com` —priceoverview/search, ~12 req/min— y ~2 s en
 `store.steampowered.com` —appdetails—). Ante un **429**, el host entra en **cooldown
-adaptativo**: se pausa (lo que diga `Retry-After`, o 30 s) y sube su intervalo, que
+adaptativo**: se pausa (lo que diga `Retry-After`, o 60 s) y sube su intervalo, que
 luego decae al normalizarse. Detectar un DLC cuesta solo una consulta de `appdetails`
 (se corta antes de pedir precios de cromos).
+
+**Reutiliza lo ya escaneado.** Los juegos con un resultado reciente (caché local ~1 h,
+incluye "sin cromos" y F2P/DLC) se reutilizan y **no** se vuelven a consultar; solo se
+reintenta lo que dio **error** (red/429/5xx, que no se cachea). Para forzar un
+re-escaneo limpio, *"Limpiar caché local"* desde el popup.
+
+### Escanear booster packs (gemas)
+
+En la página del **booster creator**
+(`steamcommunity.com/tradingcards/boostercreator`) aparece un panel **💎 Booster
+Profit** abajo a la derecha:
+
+1. Muestra el **precio del Saco de Gemas** (1000 gemas) como referencia.
+2. Clic en **"Escanear boosters"**: lee todos los juegos elegibles de la página y,
+   por cada uno, compara su **costo en gemas** (valuado con el saco) contra el
+   **precio de venta** del booster pack (neto del fee). Lista los resultados ordenados
+   por profit (verde = positivo); **"Mostrar solo con profit"** filtra la lista.
+3. Click en un ítem para **seleccionar ese juego** en el selector nativo de la página.
+
+El escaneo es **secuencial** y respeta el delay/throttle del backend (igual que el
+escáner del buscador), así que con muchos juegos puede tardar. Podés **detenerlo** en
+cualquier momento.
+
+**Reutiliza lo ya escaneado.** Los juegos consultados recientemente (caché local
+~1 h) se reutilizan al instante y **no** se vuelven a consultar a Steam; solo se
+reintenta lo que dio **error** (ej. un 429). El panel muestra cuántos se reutilizaron.
+Para forzar un re-escaneo limpio, usá *"Limpiar caché local"* en el popup.
 
 ### Configurar la URL del backend
 
