@@ -8,10 +8,15 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import quote
 
 from ..config import settings
-from .client import get_json
+from .client import get_json, get_text
+
+# El item_nameid aparece en el HTML del listing como Market_LoadOrderSpread( 12345 ).
+_NAMEID_RE = re.compile(r"Market_LoadOrderSpread\(\s*(\d+)\s*\)")
 
 # Saco de Gemas: ítem del market (appid 753) que entrega 1000 gemas. Su precio sirve
 # de referencia para valuar las gemas que cuesta crear un booster pack.
@@ -71,6 +76,41 @@ async def fetch_card_price(market_hash_name: str) -> dict[str, Any] | None:
         "appid": settings.cards_appid,
         "currency": settings.currency,
         "market_hash_name": market_hash_name,
+    }
+    data = await get_json(url, params)
+    return data if isinstance(data, dict) else None
+
+
+async def fetch_item_nameid(market_hash_name: str) -> int | None:
+    """Devuelve el ``item_nameid`` de un ítem del market (appid 753).
+
+    Steam no lo expone por API: se scrapea del HTML de la página del listing, donde
+    aparece en la llamada ``Market_LoadOrderSpread( <nameid> )``. Es un ID fijo por
+    ítem, así que se puede cachear por mucho tiempo.
+    """
+    url = (
+        f"{settings.steam_community_base}/market/listings/"
+        f"{settings.cards_appid}/{quote(market_hash_name)}"
+    )
+    html = await get_text(url)
+    m = _NAMEID_RE.search(html)
+    return int(m.group(1)) if m else None
+
+
+async def fetch_order_histogram(item_nameid: int) -> dict[str, Any] | None:
+    """JSON crudo de itemordershistogram: buy/sell orders vigentes de un ítem.
+
+    Incluye ``highest_buy_order`` (el pedido de compra más alto, en centavos): lo que
+    se cobra HOY vendiendo al instante, sin esperar comprador. Requiere el
+    ``item_nameid`` (ver ``fetch_item_nameid``).
+    """
+    url = f"{settings.steam_community_base}/market/itemordershistogram"
+    params = {
+        "country": settings.country_code,
+        "language": settings.language,
+        "currency": settings.currency,
+        "item_nameid": item_nameid,
+        "two_factor": 0,
     }
     data = await get_json(url, params)
     return data if isinstance(data, dict) else None

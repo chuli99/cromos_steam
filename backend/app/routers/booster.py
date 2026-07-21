@@ -3,6 +3,8 @@
 - ``GET /api/gems/sack``: precio de referencia del Saco de Gemas (1000 gemas).
 - ``GET /api/booster/{appid}``: compara el costo en gemas de crear un booster pack
   (gemas valuadas según el Saco de Gemas) contra su precio de venta en el market.
+- ``GET /api/booster/{appid}/quick``: igual, pero contra el **pedido de compra más
+  alto** (buy order): lo que se cobra vendiendo al instante, sin esperar comprador.
 
 Los datos por juego (appid, nombre, costo en gemas) los provee la extensión leyéndolos
 de la página del booster creator de Steam; el backend solo agrega precios + cálculo.
@@ -15,8 +17,15 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..cache import get_or_set
 from ..config import settings
-from ..models import BoosterValue, GemSackPrice
-from ..steam.market import GEM_SACK_HASH, GEMS_PER_SACK, booster_hash_name, fetch_card_price
+from ..models import BoosterQuickValue, BoosterValue, GemSackPrice
+from ..steam.market import (
+    GEM_SACK_HASH,
+    GEMS_PER_SACK,
+    booster_hash_name,
+    fetch_card_price,
+    fetch_item_nameid,
+    fetch_order_histogram,
+)
 from ..steam.parser import apply_fee, parse_price
 
 router = APIRouter()
@@ -91,6 +100,77 @@ async def get_booster_value(
         gem_cost_value=round(gem_cost_value, 4) if gem_cost_value is not None else None,
         booster_price=round(booster_price, 4) if booster_price is not None else None,
         booster_net_price=round(booster_net, 4) if booster_net is not None else None,
+        fee_rate=settings.fee_rate,
+        profit=round(profit, 4) if profit is not None else None,
+        profit_positive=bool(profit is not None and profit > 0),
+    )
+
+
+async def _highest_buy_order(booster_hash: str) -> float | None:
+    """Pedido de compra más alto del booster (en unidades), o ``None`` si no hay.
+
+    Dos pasos, ambos cacheados: el ``item_nameid`` (fijo por ítem, TTL largo) y el
+    histograma de órdenes (TTL de precios). ``highest_buy_order`` viene en centavos.
+    """
+    nameid = await get_or_set(
+        f"nameid:{booster_hash}",
+        lambda: fetch_item_nameid(booster_hash),
+        settings.cache_ttl_nameid,
+    )
+    if nameid is None:
+        return None
+    histogram = await get_or_set(
+        f"histogram:{settings.currency}:{nameid}",
+        lambda: fetch_order_histogram(nameid),
+        settings.cache_ttl_cards,
+    )
+    if not histogram or histogram.get("success") != 1:
+        return None
+    raw = histogram.get("highest_buy_order")
+    try:
+        return int(raw) / 100 if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/booster/{appid}/quick", response_model=BoosterQuickValue)
+async def get_booster_quick_value(
+    appid: int,
+    gem_cost: Annotated[int, Query(gt=0, description="Costo del booster en gemas (de la página).")],
+    name: Annotated[str, Query(min_length=1, description="Nombre del juego (arma el market_hash_name del booster).")],
+) -> BoosterQuickValue:
+    """Profit "rápido": costo en gemas vs el **pedido de compra más alto** del booster.
+
+    Vender contra el buy order más alto cobra menos que listar, pero es **inmediato y
+    garantizado** (el comprador ya puso la orden). Útil para asegurar profit sin
+    esperar a que alguien compre el listado.
+
+    - **Costo**: ``(gem_cost / 1000) * precio_saco`` (igual que el modo normal).
+    - **Venta**: ``highest_buy_order`` del histograma de órdenes, neto del fee.
+    - **Profit**: venta_neta − costo. Si no hay buy orders, queda en ``None``.
+    """
+    booster_hash = booster_hash_name(appid, name)
+    buy_order = await _highest_buy_order(booster_hash)
+    buy_order_net = apply_fee(buy_order, settings.fee_rate) if buy_order is not None else None
+
+    sack_price = await _gem_sack_price()
+    gem_cost_value = (gem_cost / GEMS_PER_SACK) * sack_price if sack_price is not None else None
+
+    profit = (
+        buy_order_net - gem_cost_value
+        if buy_order_net is not None and gem_cost_value is not None
+        else None
+    )
+
+    return BoosterQuickValue(
+        appid=appid,
+        name=name,
+        currency=settings.currency,
+        gem_cost=gem_cost,
+        gem_price_per_1000=round(sack_price, 4) if sack_price is not None else None,
+        gem_cost_value=round(gem_cost_value, 4) if gem_cost_value is not None else None,
+        buy_order_price=round(buy_order, 4) if buy_order is not None else None,
+        buy_order_net=round(buy_order_net, 4) if buy_order_net is not None else None,
         fee_rate=settings.fee_rate,
         profit=round(profit, 4) if profit is not None else None,
         profit_positive=bool(profit is not None and profit > 0),

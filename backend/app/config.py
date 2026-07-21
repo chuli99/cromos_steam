@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     cache_ttl_cards: int = 6 * 3600     # precio de cromos: 6h
     cache_ttl_game: int = 1 * 3600      # precio del juego: 1h
     cache_ttl_card_list: int = 24 * 3600  # lista de cromos: 24h
+    cache_ttl_nameid: int = 30 * 24 * 3600  # item_nameid del market: 30d (es un ID fijo)
 
     # --- Rate limiting por host de Steam (intervalo mínimo entre requests, s) ---
     # Cada host se limita por separado. Se eligen BIEN POR DEBAJO del máximo teórico:

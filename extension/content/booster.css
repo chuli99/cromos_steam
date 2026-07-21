@@ -59,6 +59,31 @@
   color: #e2a04b;
 }
 
+#scp-booster-panel .scp-bp-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+#scp-booster-panel .scp-bp-tab {
+  flex: 1;
+  padding: 5px 4px;
+  border: 1px solid #2a475e;
+  border-radius: 3px;
+  background: #16202c;
+  color: #8f98a0;
+  font-size: 12px;
+  cursor: pointer;
+}
+#scp-booster-panel .scp-bp-tab:hover {
+  color: #c6d4df;
+}
+#scp-booster-panel .scp-bp-tab-active {
+  background: #2a475e;
+  color: #66c0f4;
+  font-weight: 600;
+}
+
 #scp-booster-panel .scp-bp-controls {
   margin-bottom: 8px;
 }
@@ -119,6 +144,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #c6d4df;
+}
+
+#scp-booster-panel .scp-bp-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#scp-booster-panel .scp-bp-market {
+  text-decoration: none;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.55;
+  cursor: pointer;
+}
+#scp-booster-panel .scp-bp-market:hover {
+  opacity: 1;
 }
 
 #scp-booster-panel .scp-bp-pos {

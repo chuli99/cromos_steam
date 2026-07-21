@@ -135,8 +135,9 @@ Dos endpoints para valuar la creación de **booster packs** con gemas, comparán
 con su precio de venta en el market:
 
 ```
-GET /api/gems/sack             # precio de referencia del Saco de Gemas (1000 gemas)
+GET /api/gems/sack                   # precio de referencia del Saco de Gemas (1000 gemas)
 GET /api/booster/{appid}?gem_cost=400&name=Dota%202
+GET /api/booster/{appid}/quick?gem_cost=400&name=Dota%202   # contra el buy order más alto
 ```
 
 `/api/booster/{appid}` compara el **costo en gemas** del booster (`gem_cost`, valuado
@@ -159,6 +160,16 @@ del fee). Devuelve un `BoosterValue`:
 
 > El `gem_cost` y el `name` los provee la extensión leyéndolos de la página del booster
 > creator. Si el booster no se vende en el market, `booster_price`/`profit` quedan en `null`.
+
+**Modo "venta rápida"** (`/api/booster/{appid}/quick`): igual que el anterior, pero la
+referencia de venta es el **pedido de compra más alto** vigente (`highest_buy_order` del
+histograma de órdenes) en lugar del precio listado. Vender contra un buy order cobra
+menos, pero es **instantáneo y garantizado** (el comprador ya puso la orden), asegurando
+el profit sin esperar comprador. Devuelve un `BoosterQuickValue` con `buy_order_price`,
+`buy_order_net` y `profit` (o `null` si no hay buy orders). Para obtener el histograma,
+el backend primero scrapea el `item_nameid` del listing del booster (ID fijo por ítem,
+cacheado 30 días), así que la **primera** consulta de cada juego cuesta 2 requests a
+Steam; las siguientes, 1 (o 0 con caché).
 
 ### Configuración
 
@@ -252,11 +263,18 @@ En la página del **booster creator**
 Profit** abajo a la derecha:
 
 1. Muestra el **precio del Saco de Gemas** (1000 gemas) como referencia.
-2. Clic en **"Escanear boosters"**: lee todos los juegos elegibles de la página y,
-   por cada uno, compara su **costo en gemas** (valuado con el saco) contra el
-   **precio de venta** del booster pack (neto del fee). Lista los resultados ordenados
-   por profit (verde = positivo); **"Mostrar solo con profit"** filtra la lista.
-3. Click en un ítem para **seleccionar ese juego** en el selector nativo de la página.
+2. Tiene **dos apartados** (pestañas), cada uno con su propia lista de resultados:
+   - **Venta listada**: compara el costo en gemas contra el **precio de venta listado**
+     del booster (neto del fee). Mayor precio, pero hay que esperar comprador.
+   - **⚡ Venta rápida**: compara contra el **pedido de compra más alto** vigente
+     (buy order). Se cobra menos, pero la venta es **instantánea y garantizada** —
+     profit asegurado al momento. El primer escaneo es más lento (2 consultas a Steam
+     por juego la primera vez).
+3. Clic en **"Escanear boosters"**: escanea todos los juegos elegibles en el modo
+   activo y lista los resultados ordenados por profit (verde = positivo);
+   **"Mostrar solo con profit"** filtra la lista.
+4. Click en un ítem para **seleccionar ese juego** en el selector nativo de la página;
+   el botón **🛒** abre el listing del booster en el market.
 
 El escaneo es **secuencial** y respeta el delay/throttle del backend (igual que el
 escáner del buscador), así que con muchos juegos puede tardar. Podés **detenerlo** en

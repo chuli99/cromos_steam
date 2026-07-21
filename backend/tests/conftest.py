@@ -8,6 +8,7 @@ según el path del endpoint de Steam.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from urllib.parse import unquote
 
 import httpx
 import pytest
@@ -26,6 +27,8 @@ class FakeSteam:
     - ``appdetails``: dict tal como lo devuelve la Storefront API (``{str(appid): ...}``).
     - ``search``: dict de search/render (``{"results": [...]}``).
     - ``prices``: mapa ``market_hash_name -> JSON crudo de priceoverview``.
+    - ``nameids``: mapa ``market_hash_name -> item_nameid`` (página del listing).
+    - ``histograms``: mapa ``item_nameid -> JSON crudo de itemordershistogram``.
     - ``fail_sequence``: por path, códigos de error a devolver antes de la respuesta
       normal (para simular 429/5xx transitorios y verificar los reintentos).
     - ``calls``: contador de requests por path (para asserts de caché/throttle).
@@ -36,6 +39,8 @@ class FakeSteam:
         self.search: dict | None = None
         self.foil_search: dict | None = None
         self.prices: dict[str, dict] = {}
+        self.nameids: dict[str, int] = {}
+        self.histograms: dict[int, dict] = {}
         self.fail_sequence: dict[str, list[int]] = {}
         self.calls: dict[str, int] = {}
 
@@ -59,6 +64,19 @@ class FakeSteam:
         if path.endswith("/market/priceoverview/"):
             name = request.url.params.get("market_hash_name", "")
             return httpx.Response(200, json=self.prices.get(name, {"success": False}))
+        if "/market/listings/" in path:
+            # Página HTML del listing: expone el item_nameid en Market_LoadOrderSpread.
+            hash_name = unquote(path.rsplit("/", 1)[-1])
+            nameid = self.nameids.get(hash_name)
+            body = (
+                f"<html>Market_LoadOrderSpread( {nameid} );</html>"
+                if nameid is not None
+                else "<html>sin listado</html>"
+            )
+            return httpx.Response(200, text=body)
+        if path.endswith("/market/itemordershistogram"):
+            nameid = int(request.url.params.get("item_nameid", "0"))
+            return httpx.Response(200, json=self.histograms.get(nameid, {"success": 0}))
 
         return httpx.Response(404, json={})
 
@@ -92,6 +110,14 @@ def make_search(hash_names: list[str]) -> dict:
 def make_price(lowest: str = "$0.16", median: str = "$0.16", volume: str = "503") -> dict:
     """Arma el JSON de priceoverview de un cromo con precio."""
     return {"success": True, "lowest_price": lowest, "median_price": median, "volume": volume}
+
+
+def make_histogram(highest_buy_cents: int | None) -> dict:
+    """Arma el JSON de itemordershistogram (``highest_buy_order`` viene en centavos)."""
+    return {
+        "success": 1,
+        "highest_buy_order": str(highest_buy_cents) if highest_buy_cents is not None else None,
+    }
 
 
 @pytest.fixture

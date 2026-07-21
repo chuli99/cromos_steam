@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from httpx import AsyncClient
 
-from conftest import FakeSteam, make_price
+from conftest import FakeSteam, make_histogram, make_price
 
 
 async def test_gem_sack_price(client: AsyncClient, steam: FakeSteam):
@@ -58,3 +58,57 @@ async def test_booster_requiere_gem_cost_positivo(client, steam):
     """gem_cost <= 0 es inválido (422 de validación de FastAPI)."""
     r = await client.get("/api/booster/570", params={"gem_cost": 0, "name": "Dota 2"})
     assert r.status_code == 422
+
+
+async def test_booster_quick_con_profit(client, steam):
+    """Saco $1.00 + booster 400 gemas ($0.40) con buy order de $0.60 -> profit rápido."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+    steam.nameids = {"570-Dota 2 Booster Pack": 12345}
+    steam.histograms = {12345: make_histogram(highest_buy_cents=60)}
+
+    r = await client.get("/api/booster/570/quick", params={"gem_cost": 400, "name": "Dota 2"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["gem_cost_value"] == 0.4
+    assert body["buy_order_price"] == 0.6
+    assert body["buy_order_net"] == round(0.6 / 1.15, 4)
+    assert body["profit"] == round(0.6 / 1.15 - 0.4, 4)
+    assert body["profit_positive"] is True
+
+
+async def test_booster_quick_sin_buy_orders(client, steam):
+    """Sin buy orders vigentes, el profit rápido queda en None (no aborta)."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+    steam.nameids = {"570-Dota 2 Booster Pack": 12345}
+    steam.histograms = {12345: make_histogram(highest_buy_cents=None)}
+
+    r = await client.get("/api/booster/570/quick", params={"gem_cost": 400, "name": "Dota 2"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["buy_order_price"] is None
+    assert body["profit"] is None
+    assert body["profit_positive"] is False
+
+
+async def test_booster_quick_sin_listing(client, steam):
+    """Si el listing no expone item_nameid (booster inexistente), profit en None."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+
+    r = await client.get("/api/booster/999/quick", params={"gem_cost": 400, "name": "Sin Mercado"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["buy_order_price"] is None
+    assert body["profit"] is None
+
+
+async def test_booster_quick_cachea_nameid(client, steam):
+    """El item_nameid se scrapea una sola vez: la 2da consulta no re-pide el listing."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+    steam.nameids = {"570-Dota 2 Booster Pack": 12345}
+    steam.histograms = {12345: make_histogram(highest_buy_cents=60)}
+
+    await client.get("/api/booster/570/quick", params={"gem_cost": 400, "name": "Dota 2"})
+    await client.get("/api/booster/570/quick", params={"gem_cost": 400, "name": "Dota 2"})
+
+    listing_calls = sum(v for k, v in steam.calls.items() if "/market/listings/" in k)
+    assert listing_calls == 1

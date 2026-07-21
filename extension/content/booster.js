@@ -20,10 +20,14 @@
     running: false,
     stop: false,
     onlyProfit: false,
+    // Modo de valuación: "sell" = precio de venta listado (hay que esperar comprador);
+    // "quick" = pedido de compra más alto (venta instantánea contra buy orders).
+    mode: "sell",
     sack: null,             // { price, price_per_gem, gems, currency }
     sackError: null,        // motivo si falló la carga del saco (para mostrarlo)
     games: [],              // [{ appid, name, gems }]
-    results: [],            // [{ appid, name, gemCost, profit, profitPositive, ... , status }]
+    // Resultados separados por modo: cada apartado mantiene su propia lista.
+    results: { sell: [], quick: [] },
   };
 
   // --- Utilidades ---
@@ -36,6 +40,13 @@
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
+  }
+
+  // URL del market de Steam para el booster pack de un juego. El market_hash_name
+  // del booster es "{appid}-{nombre} Booster Pack" bajo el appid 753 (cromos).
+  function marketUrl(appid, name) {
+    const hash = `${appid}-${name} Booster Pack`;
+    return `https://steamcommunity.com/market/listings/753/${encodeURIComponent(hash)}`;
   }
 
   // Steam inicializa la página con CBoosterCreatorPage.Init( [ {...}, ... ], ... ).
@@ -97,7 +108,21 @@
 
   // --- Panel ---
 
-  let $progress, $list, $startBtn, $onlyProfit, $sack;
+  let $progress, $list, $startBtn, $onlyProfit, $sack, $note, $tabs;
+
+  // Texto explicativo de cada modo (se muestra bajo la lista).
+  const MODE_NOTES = {
+    sell:
+      "Compara el costo en gemas de cada booster (según el precio del Saco de Gemas) " +
+      "contra su precio de venta LISTADO en el market (hay que esperar comprador). " +
+      "Escaneo secuencial y respetuoso del rate limit de Steam. Click en un ítem para " +
+      "seleccionarlo en la página; 🛒 abre su market.",
+    quick:
+      "⚡ Profit rápido: compara el costo en gemas contra el PEDIDO DE COMPRA más alto " +
+      "vigente (venta instantánea y garantizada contra buy orders, cobrando menos). " +
+      "Requiere más consultas a Steam por juego, así que el primer escaneo es más lento. " +
+      "Click en un ítem para seleccionarlo; 🛒 abre su market.",
+  };
 
   function buildPanel() {
     const panel = document.createElement("div");
@@ -109,6 +134,12 @@
       </div>
       <div class="scp-bp-body">
         <div id="scp-bp-sack" class="scp-bp-sack">Saco de gemas: —</div>
+        <div class="scp-bp-tabs">
+          <button class="scp-bp-tab scp-bp-tab-active" data-mode="sell"
+            title="Contra el precio de venta listado (hay que esperar comprador)">Venta listada</button>
+          <button class="scp-bp-tab" data-mode="quick"
+            title="Contra el pedido de compra más alto (venta instantánea garantizada)">⚡ Venta rápida</button>
+        </div>
         <div class="scp-bp-controls">
           <button id="scp-bp-start">Escanear boosters</button>
         </div>
@@ -118,12 +149,7 @@
         </label>
         <div id="scp-bp-progress" class="scp-bp-progress">Listo para escanear.</div>
         <div id="scp-bp-list" class="scp-bp-list"></div>
-        <div class="scp-bp-note">
-          Compara el costo en gemas de cada booster (según el precio del Saco de Gemas)
-          contra su precio de venta neto en el market. Escaneo secuencial y respetuoso
-          del rate limit de Steam: puede tardar si hay muchos juegos. Click en un ítem
-          para seleccionarlo en la página.
-        </div>
+        <div id="scp-bp-note" class="scp-bp-note"></div>
       </div>`;
     document.body.appendChild(panel);
 
@@ -132,6 +158,24 @@
     $startBtn = panel.querySelector("#scp-bp-start");
     $onlyProfit = panel.querySelector("#scp-bp-onlyprofit");
     $sack = panel.querySelector("#scp-bp-sack");
+    $note = panel.querySelector("#scp-bp-note");
+    $tabs = panel.querySelectorAll(".scp-bp-tab");
+    $note.textContent = MODE_NOTES[state.mode];
+
+    // Cambiar de apartado: cada modo conserva sus propios resultados. Bloqueado
+    // durante un escaneo para no mezclar listas.
+    for (const tab of $tabs) {
+      tab.addEventListener("click", () => {
+        if (state.running || tab.dataset.mode === state.mode) return;
+        state.mode = tab.dataset.mode;
+        for (const t of $tabs) t.classList.toggle("scp-bp-tab-active", t === tab);
+        $note.textContent = MODE_NOTES[state.mode];
+        $progress.textContent = state.results[state.mode].length
+          ? `${state.results[state.mode].length} resultados de este modo.`
+          : "Listo para escanear.";
+        renderList();
+      });
+    }
 
     $startBtn.addEventListener("click", () => {
       if (state.running) {
@@ -188,7 +232,7 @@
   }
 
   function renderList() {
-    const items = state.results
+    const items = state.results[state.mode]
       .filter((r) => (state.onlyProfit ? r.profitPositive : true))
       .sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity));
 
@@ -205,18 +249,35 @@
       if (r.status === "ok") {
         val.className = r.profitPositive ? "scp-bp-pos" : "scp-bp-neg";
         val.textContent = `${r.profitPositive ? "+" : ""}${fmt(r.profit, r.currency)}`;
-        // Detalle al pasar el mouse: venta neta del booster vs costo en gemas.
+        // Detalle al pasar el mouse: venta neta (listado o buy order) vs costo en gemas.
+        const label = state.mode === "quick" ? "Buy order más alto" : "Booster";
         line.title =
-          `Booster: ${fmt(r.boosterPrice, r.currency)} (neto ${fmt(r.boosterNet, r.currency)})\n` +
+          `${label}: ${fmt(r.boosterPrice, r.currency)} (neto ${fmt(r.boosterNet, r.currency)})\n` +
           `Costo en gemas: ${fmt(r.gemCostValue, r.currency)} (${r.gemCost} gemas)`;
       } else {
         val.className = "scp-bp-muted";
         val.textContent = r.status;
       }
 
+      // Lado derecho: valor + botón que abre el market del booster en otra pestaña.
+      const right = document.createElement("span");
+      right.className = "scp-bp-right";
+      right.appendChild(val);
+
+      const market = document.createElement("a");
+      market.className = "scp-bp-market";
+      market.textContent = "🛒";
+      market.title = "Ver en el mercado de Steam";
+      market.href = marketUrl(r.appid, r.name);
+      market.target = "_blank";
+      market.rel = "noopener noreferrer";
+      // No propagar el click al ítem (evita seleccionar el juego al abrir el market).
+      market.addEventListener("click", (e) => e.stopPropagation());
+      right.appendChild(market);
+
       line.appendChild(name);
-      line.appendChild(val);
-      // Click: seleccionar ese juego en el selector de la página para poder crearlo.
+      line.appendChild(right);
+      // Click en el ítem: seleccionar ese juego en el selector de la página.
       line.addEventListener("click", () => selectGameInPage(r.appid));
       $list.appendChild(line);
     }
@@ -242,9 +303,11 @@
     });
   }
 
-  function queryBooster(appid, gemCost, name) {
+  function queryBooster(mode, appid, gemCost, name) {
+    // "sell" -> precio listado (GET_BOOSTER); "quick" -> buy order (GET_BOOSTER_QUICK).
+    const type = mode === "quick" ? "GET_BOOSTER_QUICK" : "GET_BOOSTER";
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: "GET_BOOSTER", appid, gemCost, name }, (r) => {
+      chrome.runtime.sendMessage({ type, appid, gemCost, name }, (r) => {
         if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
         else resolve(r);
       });
@@ -252,7 +315,9 @@
   }
 
   // Arma la entry de un resultado a partir de la respuesta del backend.
-  function handleResult(game, resp) {
+  // ``mode`` decide de qué campos leer el precio (listado vs buy order); la entry
+  // usa nombres genéricos (boosterPrice/boosterNet) para compartir el render.
+  function handleResult(mode, game, resp) {
     const entry = {
       appid: game.appid,
       name: game.name,
@@ -269,12 +334,12 @@
     if (resp && resp.ok) {
       const d = resp.data;
       entry.currency = d.currency;
-      entry.boosterPrice = d.booster_price;
-      entry.boosterNet = d.booster_net_price;
+      entry.boosterPrice = mode === "quick" ? d.buy_order_price : d.booster_price;
+      entry.boosterNet = mode === "quick" ? d.buy_order_net : d.booster_net_price;
       entry.gemCostValue = d.gem_cost_value;
       if (d.profit == null) {
-        // El booster no tiene precio de mercado: no se puede valuar.
-        entry.status = "sin precio";
+        // Sin precio listado (modo venta) o sin buy orders (modo rápido).
+        entry.status = mode === "quick" ? "sin buy orders" : "sin precio";
       } else {
         entry.profit = d.profit;
         entry.profitPositive = d.profit_positive;
@@ -282,7 +347,7 @@
       }
     }
 
-    state.results.push(entry);
+    state.results[mode].push(entry);
     return entry;
   }
 
@@ -296,9 +361,12 @@
     }
     state.games = games;
 
+    // El escaneo corre en el modo activo al arrancar (las pestañas quedan
+    // bloqueadas mientras corre) y solo pisa los resultados de ESE modo.
+    const mode = state.mode;
     state.running = true;
     state.stop = false;
-    state.results = [];
+    state.results[mode] = [];
     $startBtn.textContent = "Detener";
 
     // Precio del saco (referencia para valuar las gemas). Si no se cargó al abrir
@@ -316,8 +384,8 @@
     for (const game of games) {
       if (state.stop) break;
 
-      const resp = await queryBooster(game.appid, game.gems, game.name);
-      const entry = handleResult(game, resp);
+      const resp = await queryBooster(mode, game.appid, game.gems, game.name);
+      const entry = handleResult(mode, game, resp);
       // ``cached`` = el resultado salió de la caché reciente (no pegó a Steam).
       const fromCache = Boolean(resp && resp.cached);
       if (fromCache) reused++;

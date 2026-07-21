@@ -123,6 +123,34 @@ async function getBooster(appid, gemCost, name) {
   }
 }
 
+// Valor "rápido" de un booster pack: costo en gemas vs el pedido de compra más
+// alto (venta instantánea contra buy orders). Misma política de caché que getBooster.
+async function getBoosterQuick(appid, gemCost, name) {
+  const cacheKey = `boosterq:${appid}:${gemCost}`;
+  const stored = (await chrome.storage.local.get(cacheKey))[cacheKey];
+  if (stored && stored.result && Date.now() - stored.ts < CACHE_TTL_MS) {
+    // Reciente: se reutiliza sin re-consultar. ``cached: true`` evita la espera.
+    return { ...stored.result, cached: true };
+  }
+
+  const base = await getBackendUrl();
+  const qs = new URLSearchParams({ gem_cost: String(gemCost), name }).toString();
+  try {
+    const resp = await fetchWithTimeout(`${base}/api/booster/${appid}/quick?${qs}`);
+    if (!resp.ok) {
+      // Errores (incl. 429/red): NO se cachean -> se reintentan en el próximo escaneo.
+      const body = await resp.json().catch(() => ({}));
+      return { ok: false, error: body.detail || `HTTP ${resp.status}`, status: resp.status };
+    }
+    const data = await resp.json();
+    const result = { ok: true, data };
+    await chrome.storage.local.set({ [cacheKey]: { ts: Date.now(), result } });
+    return { ...result, cached: false };
+  } catch (err) {
+    return { ok: false, error: backendError(err, base) };
+  }
+}
+
 // Canal de mensajes con el content script y el popup.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "GET_PROFIT") {
@@ -133,6 +161,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getBooster(msg.appid, msg.gemCost, msg.name).then(sendResponse);
     return true; // respuesta asíncrona
   }
+  if (msg && msg.type === "GET_BOOSTER_QUICK") {
+    getBoosterQuick(msg.appid, msg.gemCost, msg.name).then(sendResponse);
+    return true; // respuesta asíncrona
+  }
   if (msg && msg.type === "GET_SACK") {
     getSackPrice().then(sendResponse);
     return true; // respuesta asíncrona
@@ -140,7 +172,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "CLEAR_CACHE") {
     chrome.storage.local.get(null).then((all) => {
       const keys = Object.keys(all).filter(
-        (k) => k.startsWith("profit:") || k.startsWith("booster:")
+        (k) => k.startsWith("profit:") || k.startsWith("booster:") || k.startsWith("boosterq:")
       );
       chrome.storage.local.remove(keys).then(() => sendResponse({ ok: true, cleared: keys.length }));
     });

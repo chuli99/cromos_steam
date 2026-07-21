@@ -63,6 +63,31 @@ class BoosterValue(BaseModel):
     profit_positive: bool = False      # True si profit > 0
 
 
+class BoosterQuickValue(BaseModel):
+    """Valor de un booster pack vendiéndolo AL INSTANTE contra el buy order más alto.
+
+    A diferencia de ``BoosterValue`` (que usa el precio de venta listado, sujeto a que
+    aparezca un comprador), acá la referencia es el **pedido de compra más alto**
+    vigente en el market: lo que se cobra hoy mismo aceptando ese buy order. Es un
+    profit "rápido": menor precio, pero venta garantizada e inmediata.
+    """
+
+    appid: int
+    name: str
+    currency: int
+
+    gem_cost: int                      # costo del booster en gemas (de la página)
+    gem_price_per_1000: float | None   # precio del Saco de Gemas (1000 gemas)
+    gem_cost_value: float | None       # costo del booster en dinero
+
+    buy_order_price: float | None      # pedido de compra más alto (lo que paga el comprador)
+    buy_order_net: float | None        # lo que recibe el vendedor tras el fee de Steam
+    fee_rate: float = Field(0.15)
+
+    profit: float | None               # buy_order_net - gem_cost_value
+    profit_positive: bool = False      # True si profit > 0
+
+
 class ProfitResponse(BaseModel):
     """Respuesta completa del cálculo de profit con todo el desglose."""
 

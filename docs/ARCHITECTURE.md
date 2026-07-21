@@ -39,7 +39,7 @@ permite:
 | `app/steam/market.py` | `search/render` → lista de cromos; `priceoverview` → precio por cromo |
 | `app/steam/parser.py` | Parseo de precios localizados; aplicación del fee |
 | `app/routers/profit.py` | `GET /api/profit/{appid}`: orquestación + `compute_profit` (pura) |
-| `app/routers/booster.py` | `GET /api/gems/sack` y `GET /api/booster/{appid}`: valor de booster packs (gemas vs market) |
+| `app/routers/booster.py` | `GET /api/gems/sack`, `GET /api/booster/{appid}` y `GET /api/booster/{appid}/quick`: valor de booster packs (gemas vs market listado / buy order más alto) |
 
 ### Endpoints de Steam usados
 
@@ -170,6 +170,20 @@ profit        = venta_neta - costo_gemas
   los cromos): el escaneo de boosters solo pega a `steamcommunity.com`, una consulta por
   juego (el precio del saco se cachea y se pide una sola vez).
 
+**Modo "venta rápida"** (`GET /api/booster/{appid}/quick`): misma cuenta pero con el
+**pedido de compra más alto** como precio de venta (`venta_neta = highest_buy / (1+fee)`):
+lo que se cobra HOY vendiendo al instante contra los buy orders, sin esperar comprador.
+Requiere dos endpoints extra de Steam:
+
+1. `GET /market/listings/753/{hash}` (HTML): se scrapea el `item_nameid` de
+   `Market_LoadOrderSpread( <id> )`. Es un ID fijo por ítem → caché de 30 días
+   (`SCP_CACHE_TTL_NAMEID`).
+2. `GET /market/itemordershistogram?item_nameid=…`: devuelve `highest_buy_order`
+   (en centavos). Se cachea con el TTL de precios.
+
+Ambos van a `steamcommunity.com` (mismo throttle): la primera consulta de un juego
+cuesta 2 requests; las siguientes 1 (histograma) o 0 (caché).
+
 ---
 
 ## Extensión (Chrome MV3)
@@ -180,7 +194,7 @@ profit        = venta_neta - costo_gemas
 | `content/overlay.css` | Estilos del overlay (fijo abajo a la derecha) |
 | `content/search.js` | Página de búsqueda (`/search…`): panel que escanea los resultados (cargando más por scroll), anota cada fila con un badge de profit y oculta los DLC |
 | `content/search.css` | Estilos del panel del escáner y de los badges por fila |
-| `content/booster.js` | Booster creator (`/tradingcards/boostercreator`): lee los juegos elegibles de la página y escanea el valor de cada booster (gemas vs market) |
+| `content/booster.js` | Booster creator (`/tradingcards/boostercreator`): lee los juegos elegibles de la página y escanea el valor de cada booster (gemas vs market), con dos apartados: venta listada y ⚡ venta rápida (buy order más alto) |
 | `content/booster.css` | Estilos del panel del escáner de boosters |
 | `background/service-worker.js` | Llama a `/api/profit/{appid}`, `/api/booster/{appid}` y `/api/gems/sack`; cachea en `chrome.storage.local` (TTL 1h). Acepta override de foils (el escaneo pide siempre sin foils) |
 | `popup/*` | Configura URL del backend, toggle de foils, delay de escaneo y limpieza de caché local |
