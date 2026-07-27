@@ -49,9 +49,9 @@ class Settings(BaseSettings):
 
     # --- HTTP ---
     http_timeout: float = 15.0
-    user_agent: str = (
-        "SteamCardProfit/1.0 (+https://github.com/chuli99/cromos_steam)"
-    )
+    # Sin URL en el UA: Steam devuelve 429 sistemático a UAs con "(+http...)"
+    # (patrón típico de scraper), aunque la IP no esté bloqueada.
+    user_agent: str = "SteamCardProfit/1.0"
 
     # --- Endpoints base de Steam ---
     steam_store_base: str = "https://store.steampowered.com"
