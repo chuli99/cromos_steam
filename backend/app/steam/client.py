@@ -53,7 +53,11 @@ def _retry_after(resp: httpx.Response) -> float:
     return settings.cooldown_429
 
 
-async def _get_response(url: str, params: dict[str, Any] | None = None) -> httpx.Response:
+async def _get_response(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
     """GET con throttle por host, reintentos y backoff. Devuelve la respuesta cruda.
 
     - **Throttle por host**: cada request a Steam respeta el intervalo mínimo del
@@ -73,7 +77,7 @@ async def _get_response(url: str, params: dict[str, Any] | None = None) -> httpx
         try:
             # El throttle espacia el inicio de cada request al host (y aplica cooldown).
             async with throttle:
-                resp = await client.get(url, params=params)
+                resp = await client.get(url, params=params, headers=headers)
 
             if resp.status_code == 429:
                 # Rate limited: penalizar el host (cooldown + subir intervalo) y reintentar.
@@ -105,13 +109,11 @@ async def _get_response(url: str, params: dict[str, Any] | None = None) -> httpx
     raise RuntimeError(f"No se pudo obtener {url} tras {settings.max_retries} intentos")
 
 
-async def get_json(url: str, params: dict[str, Any] | None = None) -> Any:
+async def get_json(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> Any:
     """GET que devuelve el cuerpo parseado como JSON (ver ``_get_response``)."""
-    resp = await _get_response(url, params)
+    resp = await _get_response(url, params, headers)
     return resp.json()
-
-
-async def get_text(url: str, params: dict[str, Any] | None = None) -> str:
-    """GET que devuelve el cuerpo como texto (ej: HTML de una página del market)."""
-    resp = await _get_response(url, params)
-    return resp.text

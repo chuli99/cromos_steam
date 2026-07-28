@@ -173,16 +173,17 @@ profit        = venta_neta - costo_gemas
 **Modo "venta rápida"** (`GET /api/booster/{appid}/quick`): misma cuenta pero con el
 **pedido de compra más alto** como precio de venta (`venta_neta = highest_buy / (1+fee)`):
 lo que se cobra HOY vendiendo al instante contra los buy orders, sin esperar comprador.
-Requiere dos endpoints extra de Steam:
+Usa un endpoint extra de Steam:
 
-1. `GET /market/listings/753/{hash}` (HTML): se scrapea el `item_nameid` de
-   `Market_LoadOrderSpread( <id> )`. Es un ID fijo por ítem → caché de 30 días
-   (`SCP_CACHE_TTL_NAMEID`).
-2. `GET /market/itemordershistogram?item_nameid=…`: devuelve `highest_buy_order`
-   (en centavos). Se cachea con el TTL de precios.
+- `GET /market/orderbook?q=Load&qp=[753, "{hash}"]` (header `x-valve-request-type:
+  queryAction`): query action del market renovado (SSR). Devuelve `amtMaxBuyOrder` y
+  `amtMinSellOrder` (en centavos). Se cachea con el TTL de precios.
 
-Ambos van a `steamcommunity.com` (mismo throttle): la primera consulta de un juego
-cuesta 2 requests; las siguientes 1 (histograma) o 0 (caché).
+> Nota: el market viejo exponía el `item_nameid` en el HTML del listing
+> (`Market_LoadOrderSpread`) y el histograma en `itemordershistogram`; con el rediseño
+> SSR de Steam ambos desaparecieron y el orderbook los reemplaza (1 request por juego).
+
+Va a `steamcommunity.com` (mismo throttle): una request por juego, o 0 con caché.
 
 ---
 

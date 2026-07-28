@@ -23,8 +23,7 @@ from ..steam.market import (
     GEMS_PER_SACK,
     booster_hash_name,
     fetch_card_price,
-    fetch_item_nameid,
-    fetch_order_histogram,
+    fetch_orderbook,
 )
 from ..steam.parser import apply_fee, parse_price
 
@@ -109,26 +108,19 @@ async def get_booster_value(
 async def _highest_buy_order(booster_hash: str) -> float | None:
     """Pedido de compra más alto del booster (en unidades), o ``None`` si no hay.
 
-    Dos pasos, ambos cacheados: el ``item_nameid`` (fijo por ítem, TTL largo) y el
-    histograma de órdenes (TTL de precios). ``highest_buy_order`` viene en centavos.
+    Una sola request cacheada al orderbook del ítem (TTL de precios).
+    ``amtMaxBuyOrder`` viene en centavos; ``0`` o ausente = sin buy orders.
     """
-    nameid = await get_or_set(
-        f"nameid:{booster_hash}",
-        lambda: fetch_item_nameid(booster_hash),
-        settings.cache_ttl_nameid,
-    )
-    if nameid is None:
-        return None
-    histogram = await get_or_set(
-        f"histogram:{settings.currency}:{nameid}",
-        lambda: fetch_order_histogram(nameid),
+    book = await get_or_set(
+        f"orderbook:{settings.currency}:{booster_hash}",
+        lambda: fetch_orderbook(booster_hash),
         settings.cache_ttl_cards,
     )
-    if not histogram or histogram.get("success") != 1:
+    if not book or not book.get("success"):
         return None
-    raw = histogram.get("highest_buy_order")
+    raw = (book.get("data") or {}).get("amtMaxBuyOrder")
     try:
-        return int(raw) / 100 if raw is not None else None
+        return int(raw) / 100 if raw else None
     except (TypeError, ValueError):
         return None
 
@@ -146,7 +138,7 @@ async def get_booster_quick_value(
     esperar a que alguien compre el listado.
 
     - **Costo**: ``(gem_cost / 1000) * precio_saco`` (igual que el modo normal).
-    - **Venta**: ``highest_buy_order`` del histograma de órdenes, neto del fee.
+    - **Venta**: ``amtMaxBuyOrder`` del orderbook del ítem, neto del fee.
     - **Profit**: venta_neta − costo. Si no hay buy orders, queda en ``None``.
     """
     booster_hash = booster_hash_name(appid, name)

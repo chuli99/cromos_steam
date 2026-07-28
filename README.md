@@ -162,14 +162,12 @@ del fee). Devuelve un `BoosterValue`:
 > creator. Si el booster no se vende en el market, `booster_price`/`profit` quedan en `null`.
 
 **Modo "venta rápida"** (`/api/booster/{appid}/quick`): igual que el anterior, pero la
-referencia de venta es el **pedido de compra más alto** vigente (`highest_buy_order` del
-histograma de órdenes) en lugar del precio listado. Vender contra un buy order cobra
+referencia de venta es el **pedido de compra más alto** vigente (`amtMaxBuyOrder` del
+orderbook del ítem) en lugar del precio listado. Vender contra un buy order cobra
 menos, pero es **instantáneo y garantizado** (el comprador ya puso la orden), asegurando
 el profit sin esperar comprador. Devuelve un `BoosterQuickValue` con `buy_order_price`,
-`buy_order_net` y `profit` (o `null` si no hay buy orders). Para obtener el histograma,
-el backend primero scrapea el `item_nameid` del listing del booster (ID fijo por ítem,
-cacheado 30 días), así que la **primera** consulta de cada juego cuesta 2 requests a
-Steam; las siguientes, 1 (o 0 con caché).
+`buy_order_net` y `profit` (o `null` si no hay buy orders). Cuesta una sola request a
+Steam por juego (`/market/orderbook`, cacheada con el TTL de precios).
 
 ### Configuración
 
