@@ -63,10 +63,13 @@ class FakeSteam:
             name = request.url.params.get("market_hash_name", "")
             return httpx.Response(200, json=self.prices.get(name, {"success": False}))
         if path.endswith("/market/orderbook"):
-            # Query action del market nuevo: qp = [appid, market_hash_name].
+            # Query action del market nuevo: qp = [appid, market_hash_name]. La
+            # respuesta real de Steam envuelve el payload en un "data" extra (el
+            # sobre de la query action), por eso se re-envuelve acá.
             qp = json.loads(request.url.params.get("qp", "[]"))
             hash_name = qp[1] if len(qp) > 1 else ""
-            return httpx.Response(200, json=self.orderbooks.get(hash_name, {"success": False}))
+            payload = self.orderbooks.get(hash_name, {"success": False})
+            return httpx.Response(200, json={"data": payload})
 
         return httpx.Response(404, json={})
 

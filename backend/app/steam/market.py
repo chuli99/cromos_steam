@@ -83,7 +83,9 @@ async def fetch_orderbook(market_hash_name: str) -> dict[str, Any] | None:
     Endpoint del market renovado de Steam (reemplaza a ``itemordershistogram``, que
     junto con el ``item_nameid`` desapareció del HTML nuevo). Es una "query action"
     del frontend SSR: ``?q=Load&qp=[appid, market_hash_name]`` más el header
-    ``x-valve-request-type``. Respuesta: ``{"success": true, "data": {...}}`` con
+    ``x-valve-request-type``. La respuesta viene envuelta en el sobre de la query
+    action (``{"data": {...payload...}}``); se desenvuelve acá para que el caller
+    reciba directo el payload: ``{"success": true, "data": {...}}`` con
     ``amtMaxBuyOrder`` (buy order más alto, en centavos) y ``amtMinSellOrder``.
     """
     url = f"{settings.steam_community_base}/market/orderbook"
@@ -91,5 +93,8 @@ async def fetch_orderbook(market_hash_name: str) -> dict[str, Any] | None:
         "q": "Load",
         "qp": json.dumps([settings.cards_appid, market_hash_name]),
     }
-    data = await get_json(url, params, headers={"x-valve-request-type": "queryAction"})
-    return data if isinstance(data, dict) else None
+    envelope = await get_json(url, params, headers={"x-valve-request-type": "queryAction"})
+    if not isinstance(envelope, dict):
+        return None
+    payload = envelope.get("data")
+    return payload if isinstance(payload, dict) else None
