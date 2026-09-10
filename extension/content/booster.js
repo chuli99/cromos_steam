@@ -42,12 +42,19 @@
     return new Promise((r) => setTimeout(r, ms));
   }
 
+  // URL del market de Steam para un market_hash_name dado (todo bajo appid 753: cromos).
+  function steamMarketUrl(hash) {
+    return `https://steamcommunity.com/market/listings/753/${encodeURIComponent(hash)}`;
+  }
+
   // URL del market de Steam para el booster pack de un juego. El market_hash_name
   // del booster es "{appid}-{nombre} Booster Pack" bajo el appid 753 (cromos).
   function marketUrl(appid, name) {
-    const hash = `${appid}-${name} Booster Pack`;
-    return `https://steamcommunity.com/market/listings/753/${encodeURIComponent(hash)}`;
+    return steamMarketUrl(`${appid}-${name} Booster Pack`);
   }
+
+  // market_hash_name del Saco de Gemas (mismo item que valúa el backend en GEM_SACK_HASH).
+  const SACK_HASH = "753-Sack of Gems";
 
   // Steam inicializa la página con CBoosterCreatorPage.Init( [ {...}, ... ], ... ).
   // El content script no puede leer variables JS de la página, pero sí el texto de
@@ -108,7 +115,7 @@
 
   // --- Panel ---
 
-  let $progress, $list, $startBtn, $onlyProfit, $sack, $note, $tabs;
+  let $progress, $list, $startBtn, $onlyProfit, $sack, $sackText, $sackMarket, $note, $tabs;
 
   // Texto explicativo de cada modo (se muestra bajo la lista).
   const MODE_NOTES = {
@@ -133,7 +140,11 @@
         <button class="scp-bp-close" title="Cerrar">×</button>
       </div>
       <div class="scp-bp-body">
-        <div id="scp-bp-sack" class="scp-bp-sack">Saco de gemas: —</div>
+        <div id="scp-bp-sack" class="scp-bp-sack">
+          <span id="scp-bp-sack-text">Saco de gemas: —</span>
+          <a id="scp-bp-sack-market" class="scp-bp-market" title="Comprar en el mercado de Steam"
+            target="_blank" rel="noopener noreferrer">🛒</a>
+        </div>
         <div class="scp-bp-tabs">
           <button class="scp-bp-tab scp-bp-tab-active" data-mode="sell"
             title="Contra el precio de venta listado (hay que esperar comprador)">Venta listada</button>
@@ -158,6 +169,12 @@
     $startBtn = panel.querySelector("#scp-bp-start");
     $onlyProfit = panel.querySelector("#scp-bp-onlyprofit");
     $sack = panel.querySelector("#scp-bp-sack");
+    $sackText = panel.querySelector("#scp-bp-sack-text");
+    $sackMarket = panel.querySelector("#scp-bp-sack-market");
+    $sackMarket.href = steamMarketUrl(SACK_HASH);
+    // No propagar el click al contenedor (no tiene handler propio, pero mantiene
+    // el mismo patrón que el 🛒 de la lista por consistencia).
+    $sackMarket.addEventListener("click", (e) => e.stopPropagation());
     $note = panel.querySelector("#scp-bp-note");
     $tabs = panel.querySelectorAll(".scp-bp-tab");
     $note.textContent = MODE_NOTES[state.mode];
@@ -200,7 +217,7 @@
 
   // Pide el precio del Saco de Gemas y lo renderiza. Guarda el error si falla.
   async function loadSack() {
-    $sack.textContent = "Saco de gemas: cargando…";
+    $sackText.textContent = "Saco de gemas: cargando…";
     $sack.classList.remove("scp-bp-sack-err");
     const resp = await querySack();
     if (resp && resp.ok) {
@@ -216,12 +233,12 @@
 
   function renderSack() {
     if (state.sack) {
-      $sack.textContent =
+      $sackText.textContent =
         `Saco de gemas (1000): ${fmt(state.sack.price, state.sack.currency)} ` +
         `· ${fmt(state.sack.price_per_gem, state.sack.currency)}/gema`;
       $sack.classList.remove("scp-bp-sack-err");
     } else {
-      $sack.textContent = `Saco de gemas: ${state.sackError || "no disponible"}`;
+      $sackText.textContent = `Saco de gemas: ${state.sackError || "no disponible"}`;
       $sack.classList.add("scp-bp-sack-err");
     }
   }
