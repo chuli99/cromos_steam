@@ -48,6 +48,10 @@
 }
 
 #scp-booster-panel .scp-bp-sack {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   margin-bottom: 8px;
   padding: 5px 7px;
   border-radius: 3px;
