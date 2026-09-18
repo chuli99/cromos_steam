@@ -39,7 +39,7 @@ permite:
 | `app/steam/market.py` | `search/render` → lista de cromos; `priceoverview` → precio por cromo |
 | `app/steam/parser.py` | Parseo de precios localizados; aplicación del fee |
 | `app/routers/profit.py` | `GET /api/profit/{appid}`: orquestación + `compute_profit` (pura) |
-| `app/routers/booster.py` | `GET /api/gems/sack`, `GET /api/booster/{appid}` y `GET /api/booster/{appid}/quick`: valor de booster packs (gemas vs market listado / buy order más alto) |
+| `app/routers/booster.py` | `GET /api/gems/sack`, `GET /api/booster/{appid}`, `GET /api/booster/{appid}/quick` y `GET /api/booster/{appid}/avg`: valor de booster packs (gemas vs market listado / buy order más alto / promedio de ventas recientes) |
 
 ### Endpoints de Steam usados
 
@@ -185,6 +185,25 @@ Usa un endpoint extra de Steam:
 
 Va a `steamcommunity.com` (mismo throttle): una request por juego, o 0 con caché.
 
+**Modo "promedio"** (`GET /api/booster/{appid}/avg`): punto intermedio, con el
+**promedio ponderado por volumen de las ventas recientes** como precio de venta
+(`venta_neta = avg_price / (1+fee)`), en vez del listado más bajo o el buy order más
+bajo que aceptaría el mercado. La fuente es `GET /market/pricehistory/?appid=753&
+market_hash_name={hash}` (`{"success": true, "prices": [["Mon DD YYYY HH: +0", precio,
+"volumen"], ...]}`), pero **ese endpoint requiere sesión logueada** — a diferencia de
+`priceoverview`/`orderbook`, Steam no lo expone a requests anónimas, así que el backend
+(que pega a Steam sin login) no lo puede pedir él mismo.
+
+Por eso este modo invierte quién hace qué: la **extensión** pide `pricehistory` desde
+el content script del booster creator (misma-origen con `steamcommunity.com`, así que
+el navegador adjunta la sesión del usuario sin permisos extra), calcula el promedio
+ponderado por volumen de la ventana (2 días por defecto, `AVG_SAMPLE_DAYS` en
+`booster.js`) y solo entonces llama a `/api/booster/{appid}/avg?avg_price=…`; el backend
+no toca Steam por el booster en este modo (nada de `steamcommunity.com` para este
+ítem), solo aplica costo en gemas + fee + profit con el valor recibido. Sin sesión o
+sin ventas en la ventana, `avg_price` queda ausente y el endpoint responde con
+`profit: null` (no error).
+
 ---
 
 ## Extensión (Chrome MV3)
@@ -195,9 +214,9 @@ Va a `steamcommunity.com` (mismo throttle): una request por juego, o 0 con cach�
 | `content/overlay.css` | Estilos del overlay (fijo abajo a la derecha) |
 | `content/search.js` | Página de búsqueda (`/search…`): panel que escanea los resultados (cargando más por scroll), anota cada fila con un badge de profit y oculta los DLC |
 | `content/search.css` | Estilos del panel del escáner y de los badges por fila |
-| `content/booster.js` | Booster creator (`/tradingcards/boostercreator`): lee los juegos elegibles de la página y escanea el valor de cada booster (gemas vs market), con dos apartados: venta listada y ⚡ venta rápida (buy order más alto) |
+| `content/booster.js` | Booster creator (`/tradingcards/boostercreator`): lee los juegos elegibles de la página y escanea el valor de cada booster (gemas vs market), con tres apartados: venta listada, 📊 promedio (pide `pricehistory` mismo-origen con la sesión del usuario) y ⚡ venta rápida (buy order más alto) |
 | `content/booster.css` | Estilos del panel del escáner de boosters |
-| `background/service-worker.js` | Llama a `/api/profit/{appid}`, `/api/booster/{appid}` y `/api/gems/sack`; cachea en `chrome.storage.local` (TTL 1h). Acepta override de foils (el escaneo pide siempre sin foils) |
+| `background/service-worker.js` | Llama a `/api/profit/{appid}`, `/api/booster/{appid}` (+ `/quick`, `/avg`) y `/api/gems/sack`; cachea en `chrome.storage.local` (TTL 1h; `/avg` no se cachea ahí, no le pega a Steam por el booster). Acepta override de foils (el escaneo pide siempre sin foils) |
 | `popup/*` | Configura URL del backend, toggle de foils, delay de escaneo y limpieza de caché local |
 
 **Flujo (página de juego):** `content.js` extrae el appid →
