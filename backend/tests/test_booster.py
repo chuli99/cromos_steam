@@ -109,3 +109,50 @@ async def test_booster_quick_cachea_orderbook(client, steam):
 
     orderbook_calls = sum(v for k, v in steam.calls.items() if k.endswith("/market/orderbook"))
     assert orderbook_calls == 1
+
+
+async def test_booster_avg_con_profit(client, steam):
+    """Saco $1.00 + booster 400 gemas ($0.40) con promedio reciente de $0.80 -> profit."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+
+    r = await client.get(
+        "/api/booster/570/avg",
+        params={"gem_cost": 400, "name": "Dota 2", "avg_price": 0.8, "sample_days": 2, "sample_volume": 37},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["gem_cost_value"] == 0.4
+    assert body["avg_sale_price"] == 0.8
+    assert body["avg_sale_net"] == round(0.8 / 1.15, 4)
+    assert body["profit"] == round(0.8 / 1.15 - 0.4, 4)
+    assert body["profit_positive"] is True
+    assert body["sample_days"] == 2
+    assert body["sample_volume"] == 37
+
+
+async def test_booster_avg_sin_ventas_recientes(client, steam):
+    """Sin ``avg_price`` (la extensión no encontró ventas en la ventana): profit en None."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+
+    r = await client.get("/api/booster/570/avg", params={"gem_cost": 400, "name": "Dota 2"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["avg_sale_price"] is None
+    assert body["profit"] is None
+    assert body["profit_positive"] is False
+
+
+async def test_booster_avg_no_pega_a_steam_por_el_promedio(client, steam):
+    """El backend no consulta orderbook/priceoverview del booster para este modo (solo el saco)."""
+    steam.prices = {"753-Sack of Gems": make_price(lowest="$1.00")}
+
+    await client.get(
+        "/api/booster/570/avg",
+        params={"gem_cost": 400, "name": "Dota 2", "avg_price": 0.8},
+    )
+
+    booster_price_calls = sum(
+        v for k, v in steam.calls.items() if k.endswith("/market/priceoverview/")
+    )
+    # Solo la consulta del Saco de Gemas (referencia de costo), ninguna del booster.
+    assert booster_price_calls == 1

@@ -88,6 +88,43 @@ class BoosterQuickValue(BaseModel):
     profit_positive: bool = False      # True si profit > 0
 
 
+class BoosterAvgValue(BaseModel):
+    """Valor de un booster pack contra el precio promedio de ventas RECIENTES.
+
+    Punto intermedio entre ``BoosterValue`` (precio listado, hay que esperar
+    comprador) y ``BoosterQuickValue`` (buy order más alto, cobra menos pero es
+    instantáneo): acá la referencia es el promedio ponderado por volumen de las
+    ventas efectivamente concretadas en una ventana reciente (``sample_days``).
+    Cobra más que el buy order (son ventas reales, no la oferta de compra más baja
+    que aceptaría el mercado) sin depender de una sola venta puntual como el precio
+    listado más bajo.
+
+    A diferencia de los otros modos, Steam no expone el historial de ventas
+    (``pricehistory``) sin una sesión logueada, así que el backend no lo puede pedir
+    él mismo: la extensión lo obtiene desde el propio navegador del usuario (ya
+    logueado en steamcommunity.com) y manda acá el promedio ya calculado
+    (``avg_price``); este endpoint solo aplica el mismo cálculo de costo/fee/profit
+    que los demás modos, para no duplicar esa lógica en el content script.
+    """
+
+    appid: int
+    name: str
+    currency: int
+
+    gem_cost: int                      # costo del booster en gemas (de la página)
+    gem_price_per_1000: float | None   # precio del Saco de Gemas (1000 gemas)
+    gem_cost_value: float | None       # costo del booster en dinero
+
+    avg_sale_price: float | None       # promedio ponderado por volumen (lo que pagó el comprador)
+    avg_sale_net: float | None         # lo que recibe el vendedor tras el fee de Steam
+    sample_days: int | None = None     # ventana considerada por la extensión (informativo)
+    sample_volume: int | None = None   # unidades vendidas en la ventana (informativo)
+    fee_rate: float = Field(0.15)
+
+    profit: float | None               # avg_sale_net - gem_cost_value
+    profit_positive: bool = False      # True si profit > 0
+
+
 class ProfitResponse(BaseModel):
     """Respuesta completa del cálculo de profit con todo el desglose."""
 
