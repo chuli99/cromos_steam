@@ -151,6 +151,31 @@ async function getBoosterQuick(appid, gemCost, name) {
   }
 }
 
+// Valor de un booster pack contra el promedio de ventas recientes. A diferencia de
+// getBooster/getBoosterQuick, ``avgPrice`` ya lo calculó el content script (pidiendo
+// pricehistory con la sesión del usuario, algo que este service worker no puede
+// hacer: no tiene host_permissions para steamcommunity.com). El backend acá no le
+// pega a Steam por el booster (solo usa el precio del saco, ya cacheado), así que no
+// hace falta cachear esta respuesta en chrome.storage.local.
+async function getBoosterAvg(appid, gemCost, name, avgPrice, sampleDays, sampleVolume) {
+  const base = await getBackendUrl();
+  const params = { gem_cost: String(gemCost), name };
+  if (avgPrice != null) params.avg_price = String(avgPrice);
+  if (sampleDays != null) params.sample_days = String(sampleDays);
+  if (sampleVolume != null) params.sample_volume = String(sampleVolume);
+  const qs = new URLSearchParams(params).toString();
+  try {
+    const resp = await fetchWithTimeout(`${base}/api/booster/${appid}/avg?${qs}`);
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      return { ok: false, error: body.detail || `HTTP ${resp.status}`, status: resp.status };
+    }
+    return { ok: true, data: await resp.json() };
+  } catch (err) {
+    return { ok: false, error: backendError(err, base) };
+  }
+}
+
 // Canal de mensajes con el content script y el popup.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "GET_PROFIT") {
@@ -163,6 +188,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg && msg.type === "GET_BOOSTER_QUICK") {
     getBoosterQuick(msg.appid, msg.gemCost, msg.name).then(sendResponse);
+    return true; // respuesta asíncrona
+  }
+  if (msg && msg.type === "GET_BOOSTER_AVG") {
+    getBoosterAvg(msg.appid, msg.gemCost, msg.name, msg.avgPrice, msg.sampleDays, msg.sampleVolume).then(sendResponse);
     return true; // respuesta asíncrona
   }
   if (msg && msg.type === "GET_SACK") {
