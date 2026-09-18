@@ -16,18 +16,25 @@
   const DEFAULT_DELAY_MS = 800;
   const MAX_BACKOFF_MS = 15000;
 
+  // Modo "avg": ventana de días para el promedio de ventas recientes, y TTL del
+  // caché en memoria de ``pricehistory`` (evita re-pedirlo al cambiar de pestaña o
+  // reabrir el panel; se pierde al recargar la página, que alcanza para esto).
+  const AVG_SAMPLE_DAYS = 2;
+  const HISTORY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h, alineado con cache_ttl_cards del backend
+
   const state = {
     running: false,
     stop: false,
     onlyProfit: false,
     // Modo de valuación: "sell" = precio de venta listado (hay que esperar comprador);
-    // "quick" = pedido de compra más alto (venta instantánea contra buy orders).
+    // "quick" = pedido de compra más alto (venta instantánea contra buy orders);
+    // "avg" = promedio ponderado por volumen de ventas de los últimos AVG_SAMPLE_DAYS días.
     mode: "sell",
     sack: null,             // { price, price_per_gem, gems, currency }
     sackError: null,        // motivo si falló la carga del saco (para mostrarlo)
     games: [],              // [{ appid, name, gems }]
     // Resultados separados por modo: cada apartado mantiene su propia lista.
-    results: { sell: [], quick: [] },
+    results: { sell: [], quick: [], avg: [] },
   };
 
   // --- Utilidades ---
@@ -55,6 +62,79 @@
 
   // market_hash_name del Saco de Gemas (mismo item que valúa el backend en GEM_SACK_HASH).
   const SACK_HASH = "753-Sack of Gems";
+
+  // --- Modo "avg": promedio de ventas recientes (pricehistory) ---
+  //
+  // /market/pricehistory requiere sesión logueada: Steam no lo expone a requests
+  // anónimas (por eso el backend no lo puede pedir él mismo, a diferencia de
+  // priceoverview/orderbook). Como este content script corre en la página de
+  // steamcommunity.com del propio usuario, el fetch es mismo-origen y el navegador
+  // adjunta sus cookies de sesión solo; no hace falta ningún permiso extra.
+
+  const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+
+  // Parsea el formato propio de Steam: "Mon DD YYYY HH: +0" (mes en inglés, hora
+  // UTC, offset literal). ``Date.parse`` no es confiable con este formato no
+  // estándar entre navegadores, así que se arma la fecha a mano.
+  function parseHistoryDate(str) {
+    const m = /^(\w{3}) (\d{1,2}) (\d{4}) (\d{1,2}):/.exec(str || "");
+    if (!m) return null;
+    const month = MONTHS[m[1]];
+    if (month == null) return null;
+    return Date.UTC(Number(m[3]), month, Number(m[2]), Number(m[4]));
+  }
+
+  // Pide el historial de ventas crudo del ítem. ``null`` si falló o si el usuario
+  // no está logueado (Steam responde success:false, no un error HTTP).
+  async function fetchPriceHistory(hash) {
+    const url = `https://steamcommunity.com/market/pricehistory/?appid=753&market_hash_name=${encodeURIComponent(hash)}`;
+    let resp;
+    try {
+      resp = await fetch(url, { credentials: "same-origin" });
+    } catch (e) {
+      return null;
+    }
+    if (!resp.ok) return null;
+    const data = await resp.json().catch(() => null);
+    if (!data || !data.success || !Array.isArray(data.prices)) return null;
+    return data.prices; // [[ "Mon DD YYYY HH: +0", precio, "volumen" ], ...]
+  }
+
+  // Promedio ponderado por volumen de las ventas dentro de los últimos ``days``
+  // días. ``null`` si no hubo ventas en la ventana (no confundir con "sin datos").
+  function computeRecentAvg(prices, days) {
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    let totalVolume = 0;
+    let totalValue = 0;
+    for (const entry of prices) {
+      const ts = parseHistoryDate(entry[0]);
+      if (ts == null || ts < cutoff) continue;
+      const vol = Number(entry[2]);
+      if (!Number.isFinite(vol) || vol <= 0) continue;
+      totalVolume += vol;
+      totalValue += Number(entry[1]) * vol;
+    }
+    if (totalVolume <= 0) return null;
+    return { avgPrice: totalValue / totalVolume, volume: totalVolume };
+  }
+
+  // Caché en memoria (vive lo que dure la página) del promedio ya calculado por
+  // ítem: evita volver a pedir pricehistory si el panel se reabre o se cambia de
+  // pestaña sin recargar. Distinto del caché del backend (ese es por HTTP request).
+  const historyCache = new Map(); // hash -> { ts, avgPrice, volume }
+
+  async function getRecentAvg(hash, days) {
+    const cached = historyCache.get(hash);
+    if (cached && Date.now() - cached.ts < HISTORY_CACHE_TTL_MS) {
+      return { ...cached, cached: true };
+    }
+    const prices = await fetchPriceHistory(hash);
+    if (!prices) return { avgPrice: null, volume: 0, cached: false, noSession: true };
+    const avg = computeRecentAvg(prices, days);
+    const result = { ts: Date.now(), avgPrice: avg ? avg.avgPrice : null, volume: avg ? avg.volume : 0 };
+    historyCache.set(hash, result);
+    return { ...result, cached: false };
+  }
 
   // Steam inicializa la página con CBoosterCreatorPage.Init( [ {...}, ... ], ... ).
   // El content script no puede leer variables JS de la página, pero sí el texto de
@@ -129,6 +209,12 @@
       "vigente (venta instantánea y garantizada contra buy orders, cobrando menos). " +
       "Requiere más consultas a Steam por juego, así que el primer escaneo es más lento. " +
       "Click en un ítem para seleccionarlo; 🛒 abre su market.",
+    avg:
+      `📊 Punto intermedio: compara el costo en gemas contra el PROMEDIO ponderado por ` +
+      `volumen de las ventas de los últimos ${AVG_SAMPLE_DAYS} días (no un solo listado ni ` +
+      "la oferta de compra más baja). Usa tu propia sesión de Steam (pricehistory), así " +
+      "que necesitás estar logueado; si no, este modo no va a traer resultados. " +
+      "Click en un ítem para seleccionarlo; 🛒 abre su market.",
   };
 
   function buildPanel() {
@@ -147,9 +233,11 @@
         </div>
         <div class="scp-bp-tabs">
           <button class="scp-bp-tab scp-bp-tab-active" data-mode="sell"
-            title="Contra el precio de venta listado (hay que esperar comprador)">Venta listada</button>
+            title="Contra el precio de venta listado (hay que esperar comprador)">Listada</button>
+          <button class="scp-bp-tab" data-mode="avg"
+            title="Contra el promedio de ventas recientes (requiere estar logueado)">📊 Promedio</button>
           <button class="scp-bp-tab" data-mode="quick"
-            title="Contra el pedido de compra más alto (venta instantánea garantizada)">⚡ Venta rápida</button>
+            title="Contra el pedido de compra más alto (venta instantánea garantizada)">⚡ Rápida</button>
         </div>
         <div class="scp-bp-controls">
           <button id="scp-bp-start">Escanear boosters</button>
@@ -266,8 +354,9 @@
       if (r.status === "ok") {
         val.className = r.profitPositive ? "scp-bp-pos" : "scp-bp-neg";
         val.textContent = `${r.profitPositive ? "+" : ""}${fmt(r.profit, r.currency)}`;
-        // Detalle al pasar el mouse: venta neta (listado o buy order) vs costo en gemas.
-        const label = state.mode === "quick" ? "Buy order más alto" : "Booster";
+        // Detalle al pasar el mouse: venta neta (listado, buy order o promedio) vs costo en gemas.
+        const label =
+          state.mode === "quick" ? "Buy order más alto" : state.mode === "avg" ? "Promedio reciente" : "Booster";
         line.title =
           `${label}: ${fmt(r.boosterPrice, r.currency)} (neto ${fmt(r.boosterNet, r.currency)})\n` +
           `Costo en gemas: ${fmt(r.gemCostValue, r.currency)} (${r.gemCost} gemas)`;
@@ -320,7 +409,33 @@
     });
   }
 
+  // Modo "avg": primero calcula el promedio reciente EN EL NAVEGADOR (pricehistory,
+  // requiere la sesión del usuario) y recién ahí le pide al backend el costo/profit
+  // con ese valor. ``cached``/``noSession`` reflejan la parte de Steam (pricehistory);
+  // el backend no cachea esta respuesta porque no le pega a Steam por el booster.
+  async function queryBoosterAvg(appid, gemCost, name) {
+    const hash = `${appid}-${name} Booster Pack`;
+    const hist = await getRecentAvg(hash, AVG_SAMPLE_DAYS);
+    const resp = await new Promise((resolve) => {
+      const msg = {
+        type: "GET_BOOSTER_AVG",
+        appid,
+        gemCost,
+        name,
+        avgPrice: hist.avgPrice,
+        sampleDays: AVG_SAMPLE_DAYS,
+        sampleVolume: hist.volume,
+      };
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
+        else resolve(r);
+      });
+    });
+    return { ...resp, cached: hist.cached, noSession: Boolean(hist.noSession) };
+  }
+
   function queryBooster(mode, appid, gemCost, name) {
+    if (mode === "avg") return queryBoosterAvg(appid, gemCost, name);
     // "sell" -> precio listado (GET_BOOSTER); "quick" -> buy order (GET_BOOSTER_QUICK).
     const type = mode === "quick" ? "GET_BOOSTER_QUICK" : "GET_BOOSTER";
     return new Promise((resolve) => {
@@ -332,8 +447,8 @@
   }
 
   // Arma la entry de un resultado a partir de la respuesta del backend.
-  // ``mode`` decide de qué campos leer el precio (listado vs buy order); la entry
-  // usa nombres genéricos (boosterPrice/boosterNet) para compartir el render.
+  // ``mode`` decide de qué campos leer el precio (listado, buy order o promedio); la
+  // entry usa nombres genéricos (boosterPrice/boosterNet) para compartir el render.
   function handleResult(mode, game, resp) {
     const entry = {
       appid: game.appid,
@@ -351,12 +466,23 @@
     if (resp && resp.ok) {
       const d = resp.data;
       entry.currency = d.currency;
-      entry.boosterPrice = mode === "quick" ? d.buy_order_price : d.booster_price;
-      entry.boosterNet = mode === "quick" ? d.buy_order_net : d.booster_net_price;
+      if (mode === "quick") {
+        entry.boosterPrice = d.buy_order_price;
+        entry.boosterNet = d.buy_order_net;
+      } else if (mode === "avg") {
+        entry.boosterPrice = d.avg_sale_price;
+        entry.boosterNet = d.avg_sale_net;
+      } else {
+        entry.boosterPrice = d.booster_price;
+        entry.boosterNet = d.booster_net_price;
+      }
       entry.gemCostValue = d.gem_cost_value;
       if (d.profit == null) {
-        // Sin precio listado (modo venta) o sin buy orders (modo rápido).
-        entry.status = mode === "quick" ? "sin buy orders" : "sin precio";
+        // Sin precio listado (venta), sin buy orders (rápida) o sin ventas
+        // recientes / sin sesión de Steam (promedio).
+        if (mode === "quick") entry.status = "sin buy orders";
+        else if (mode === "avg") entry.status = resp.noSession ? "sin sesión" : "sin ventas recientes";
+        else entry.status = "sin precio";
       } else {
         entry.profit = d.profit;
         entry.profitPositive = d.profit_positive;

@@ -71,12 +71,16 @@
 
 #scp-booster-panel .scp-bp-tab {
   flex: 1;
-  padding: 5px 4px;
+  min-width: 0;
+  padding: 5px 3px;
   border: 1px solid #2a475e;
   border-radius: 3px;
   background: #16202c;
   color: #8f98a0;
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 #scp-booster-panel .scp-bp-tab:hover {
