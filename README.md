@@ -131,13 +131,14 @@ Agrega al `ProfitResponse` el bloque `foils` (o `null` si no se pidió):
 
 #### Booster packs (gemas)
 
-Dos endpoints para valuar la creación de **booster packs** con gemas, comparándola
-con su precio de venta en el market:
+Endpoints para valuar la creación de **booster packs** con gemas, comparándola
+con su precio de venta en el market (tres referencias de venta distintas):
 
 ```
 GET /api/gems/sack                   # precio de referencia del Saco de Gemas (1000 gemas)
 GET /api/booster/{appid}?gem_cost=400&name=Dota%202
 GET /api/booster/{appid}/quick?gem_cost=400&name=Dota%202   # contra el buy order más alto
+GET /api/booster/{appid}/avg?gem_cost=400&name=Dota%202&avg_price=0.85   # contra el promedio de ventas recientes
 ```
 
 `/api/booster/{appid}` compara el **costo en gemas** del booster (`gem_cost`, valuado
@@ -168,6 +169,18 @@ menos, pero es **instantáneo y garantizado** (el comprador ya puso la orden), a
 el profit sin esperar comprador. Devuelve un `BoosterQuickValue` con `buy_order_price`,
 `buy_order_net` y `profit` (o `null` si no hay buy orders). Cuesta una sola request a
 Steam por juego (`/market/orderbook`, cacheada con el TTL de precios).
+
+**Modo "promedio"** (`/api/booster/{appid}/avg`): punto intermedio entre los dos
+anteriores — compara contra el **promedio ponderado por volumen de las ventas
+efectivamente concretadas** en una ventana reciente (2 días por defecto), en vez del
+precio listado más bajo o el buy order más bajo que aceptaría el mercado. Steam expone
+ese historial (`/market/pricehistory`) solo a sesiones logueadas, así que **el backend
+no lo puede pedir él mismo**: recibe `avg_price` (y, opcionalmente, `sample_days` /
+`sample_volume` informativos) ya calculado por quien llama, y solo le aplica el mismo
+costo en gemas + fee + profit que los otros modos. Devuelve un `BoosterAvgValue` con
+`avg_sale_price`, `avg_sale_net` y `profit` (`null` si no se pasó `avg_price`, ej. sin
+ventas recientes o sin sesión). La extensión es quien calcula `avg_price`, pidiendo el
+historial desde el propio navegador del usuario (ver más abajo).
 
 ### Configuración
 
@@ -260,14 +273,21 @@ En la página del **booster creator**
 (`steamcommunity.com/tradingcards/boostercreator`) aparece un panel **💎 Booster
 Profit** abajo a la derecha:
 
-1. Muestra el **precio del Saco de Gemas** (1000 gemas) como referencia.
-2. Tiene **dos apartados** (pestañas), cada uno con su propia lista de resultados:
-   - **Venta listada**: compara el costo en gemas contra el **precio de venta listado**
+1. Muestra el **precio del Saco de Gemas** (1000 gemas) como referencia, con un botón
+   **🛒** que abre su listing en el market para comprarlo.
+2. Tiene **tres apartados** (pestañas), cada uno con su propia lista de resultados:
+   - **Listada**: compara el costo en gemas contra el **precio de venta listado**
      del booster (neto del fee). Mayor precio, pero hay que esperar comprador.
-   - **⚡ Venta rápida**: compara contra el **pedido de compra más alto** vigente
+   - **📊 Promedio**: compara contra el **promedio ponderado por volumen de las
+     ventas de los últimos 2 días** (ni el listado más bajo ni la oferta de compra
+     más baja). Requiere estar **logueado** en steamcommunity.com: pide el historial
+     de ventas (`pricehistory`) desde el propio navegador, con la sesión del usuario
+     (Steam no expone ese endpoint a requests anónimas, así que el backend no
+     interviene en esa parte). Sin sesión o sin ventas recientes, el ítem queda sin
+     resultado en vez de romper el escaneo.
+   - **⚡ Rápida**: compara contra el **pedido de compra más alto** vigente
      (buy order). Se cobra menos, pero la venta es **instantánea y garantizada** —
-     profit asegurado al momento. El primer escaneo es más lento (2 consultas a Steam
-     por juego la primera vez).
+     profit asegurado al momento.
 3. Clic en **"Escanear boosters"**: escanea todos los juegos elegibles en el modo
    activo y lista los resultados ordenados por profit (verde = positivo);
    **"Mostrar solo con profit"** filtra la lista.
@@ -282,6 +302,10 @@ cualquier momento.
 ~1 h) se reutilizan al instante y **no** se vuelven a consultar a Steam; solo se
 reintenta lo que dio **error** (ej. un 429). El panel muestra cuántos se reutilizaron.
 Para forzar un re-escaneo limpio, usá *"Limpiar caché local"* en el popup.
+
+> El modo **📊 Promedio** cachea su parte de Steam (`pricehistory`) aparte, en memoria
+> (~6 h, se pierde al recargar la página) porque no pasa por el backend ni por
+> `chrome.storage.local`: *"Limpiar caché local"* no la afecta, solo recargar la página.
 
 ### Configurar la URL del backend
 
