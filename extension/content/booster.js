@@ -32,8 +32,11 @@
     mode: "sell",
     sack: null,             // { price, price_per_gem, gems, currency }
     sackError: null,        // motivo si falló la carga del saco (para mostrarlo)
-    // Precio al que el usuario compra el saco de 1000 gemas (override del precio de
-    // mercado, ej. si las compra por buy order o a otro precio). null = usar el de mercado.
+    // Precio al que el usuario compra el saco de 1000 gemas (ej. por buy order o a otro
+    // precio). ``sackUseCustom`` es el switch; ``sackOverride`` es el valor efectivo
+    // (precio del usuario si está activo y es válido, si no null = precio de mercado).
+    sackUseCustom: false,
+    sackCustomPrice: null,
     sackOverride: null,
     games: [],              // [{ appid, name, gems }]
     // Resultados separados por modo: cada apartado mantiene su propia lista.
@@ -199,7 +202,7 @@
 
   // --- Panel ---
 
-  let $progress, $list, $startBtn, $onlyProfit, $sack, $sackText, $sackMarket, $sackInput, $note, $tabs;
+  let $progress, $list, $startBtn, $onlyProfit, $sack, $sackText, $sackMarket, $sackInput, $sackSwitch, $note, $tabs;
 
   // Texto explicativo de cada modo (se muestra bajo la lista).
   const MODE_NOTES = {
@@ -236,11 +239,12 @@
             target="_blank" rel="noopener noreferrer">🛒</a>
         </div>
         <div class="scp-bp-sackprice">
-          <label for="scp-bp-sackinput" title="Precio al que comprás 1000 gemas. Vacío = precio de mercado del saco.">
-            Compro el saco a:
+          <label class="scp-bp-switch" title="Apagado: precio de mercado del saco. Encendido: el precio que pongas.">
+            <input type="checkbox" id="scp-bp-sackswitch" />
+            <span class="scp-bp-slider"></span>
           </label>
-          <input type="number" id="scp-bp-sackinput" min="0" step="0.01" placeholder="mercado" />
-          <button id="scp-bp-sackreset" title="Volver al precio de mercado">↺</button>
+          <span class="scp-bp-sacklabel">Mi precio del saco</span>
+          <input type="number" id="scp-bp-sackinput" min="0" step="0.01" placeholder="ej. 0.50" disabled />
         </div>
         <div class="scp-bp-tabs">
           <button class="scp-bp-tab scp-bp-tab-active" data-mode="sell"
@@ -310,20 +314,30 @@
 
     panel.querySelector(".scp-bp-close").addEventListener("click", () => panel.remove());
 
-    // Precio del saco a mano: recalcula la lista al instante (sin re-escanear) y se
-    // recuerda entre visitas. Vacío o inválido = volver al precio de mercado.
-    $sackInput.addEventListener("input", () => setSackOverride($sackInput.value));
-    panel.querySelector("#scp-bp-sackreset").addEventListener("click", () => {
-      $sackInput.value = "";
-      setSackOverride("");
+    // Precio del saco: el switch elige entre el precio de mercado (apagado) y el que
+    // puso el usuario (encendido). Recalcula la lista al instante (sin re-escanear) y
+    // se recuerda entre visitas. Encendido sin un precio válido = sigue el de mercado.
+    $sackSwitch = panel.querySelector("#scp-bp-sackswitch");
+    $sackSwitch.addEventListener("change", () => {
+      state.sackUseCustom = $sackSwitch.checked;
+      $sackInput.disabled = !state.sackUseCustom;
+      if (state.sackUseCustom) $sackInput.focus();
+      applySackSettings();
     });
-    chrome.storage.local.get("sackOverride").then(({ sackOverride }) => {
-      if (Number.isFinite(sackOverride) && sackOverride > 0) {
-        $sackInput.value = String(sackOverride);
-        state.sackOverride = sackOverride;
-        renderSack();
-        renderList();
+    $sackInput.addEventListener("input", () => {
+      const n = parseFloat($sackInput.value);
+      state.sackCustomPrice = Number.isFinite(n) && n > 0 ? n : null;
+      applySackSettings();
+    });
+    chrome.storage.local.get(["sackUseCustom", "sackCustomPrice"]).then((s) => {
+      if (Number.isFinite(s.sackCustomPrice) && s.sackCustomPrice > 0) {
+        state.sackCustomPrice = s.sackCustomPrice;
+        $sackInput.value = String(s.sackCustomPrice);
       }
+      state.sackUseCustom = Boolean(s.sackUseCustom);
+      $sackSwitch.checked = state.sackUseCustom;
+      $sackInput.disabled = !state.sackUseCustom;
+      applySackSettings(false);
     });
 
     // Cargar el precio del saco al abrir (no solo al escanear): así se ve de entrada
@@ -331,10 +345,16 @@
     loadSack();
   }
 
-  function setSackOverride(raw) {
-    const n = parseFloat(raw);
-    state.sackOverride = Number.isFinite(n) && n > 0 ? n : null;
-    chrome.storage.local.set({ sackOverride: state.sackOverride });
+  // Resuelve el precio efectivo del saco (override = precio del usuario solo si el
+  // switch está encendido Y hay un precio válido) y refresca panel + lista.
+  function applySackSettings(persist = true) {
+    state.sackOverride = state.sackUseCustom && state.sackCustomPrice != null ? state.sackCustomPrice : null;
+    if (persist) {
+      chrome.storage.local.set({
+        sackUseCustom: state.sackUseCustom,
+        sackCustomPrice: state.sackCustomPrice,
+      });
+    }
     renderSack();
     renderList();
   }

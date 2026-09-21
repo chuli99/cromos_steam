@@ -71,7 +71,7 @@
   font-size: 12px;
   color: #8f98a0;
 }
-#scp-booster-panel .scp-bp-sackprice input {
+#scp-booster-panel .scp-bp-sackprice input[type="number"] {
   flex: 1;
   min-width: 0;
   padding: 3px 5px;
@@ -81,16 +81,59 @@
   color: #c6d4df;
   font-size: 12px;
 }
-#scp-booster-panel .scp-bp-sackprice button {
-  padding: 2px 7px;
-  border: 1px solid #2a475e;
-  border-radius: 3px;
-  background: #16202c;
-  color: #8f98a0;
+#scp-booster-panel .scp-bp-sackprice input[type="number"]:disabled {
+  opacity: 0.45;
+}
+#scp-booster-panel .scp-bp-sacklabel {
+  white-space: nowrap;
+}
+
+/* Toggle switch (apagado = precio de mercado, encendido = precio del usuario). */
+#scp-booster-panel .scp-bp-switch {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 30px;
+  height: 16px;
   cursor: pointer;
 }
-#scp-booster-panel .scp-bp-sackprice button:hover {
-  color: #c6d4df;
+#scp-booster-panel .scp-bp-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+#scp-booster-panel .scp-bp-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  background: #2a475e;
+  transition: background 0.15s;
+  pointer-events: none;
+}
+#scp-booster-panel .scp-bp-slider::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #c6d4df;
+  transition: transform 0.15s;
+}
+#scp-booster-panel .scp-bp-switch input:checked + .scp-bp-slider {
+  background: #66c0f4;
+}
+#scp-booster-panel .scp-bp-switch input:checked + .scp-bp-slider::before {
+  transform: translateX(14px);
+  background: #0b1419;
+}
+#scp-booster-panel .scp-bp-switch input:focus-visible + .scp-bp-slider {
+  outline: 2px solid #66c0f4;
+  outline-offset: 1px;
 }
 
 #scp-booster-panel .scp-bp-tabs {
