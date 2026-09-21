@@ -274,7 +274,11 @@ En la página del **booster creator**
 Profit** abajo a la derecha:
 
 1. Muestra el **precio del Saco de Gemas** (1000 gemas) como referencia, con un botón
-   **🛒** que abre su listing en el market para comprarlo.
+   **🛒** que abre su listing en el market para comprarlo. Debajo hay un
+   **switch "Mi precio del saco"**: apagado usa el precio de mercado; encendido usa el
+   que escribas en el campo (ej. si comprás las gemas por buy order). Al cambiarlo,
+   **todos los resultados se recalculan al instante** con ese costo, sin re-escanear
+   (el switch y el precio se recuerdan entre visitas).
 2. Tiene **tres apartados** (pestañas), cada uno con su propia lista de resultados:
    - **Listada**: compara el costo en gemas contra el **precio de venta listado**
      del booster (neto del fee). Mayor precio, pero hay que esperar comprador.
