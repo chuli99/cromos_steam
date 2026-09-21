@@ -32,6 +32,9 @@
     mode: "sell",
     sack: null,             // { price, price_per_gem, gems, currency }
     sackError: null,        // motivo si falló la carga del saco (para mostrarlo)
+    // Precio al que el usuario compra el saco de 1000 gemas (override del precio de
+    // mercado, ej. si las compra por buy order o a otro precio). null = usar el de mercado.
+    sackOverride: null,
     games: [],              // [{ appid, name, gems }]
     // Resultados separados por modo: cada apartado mantiene su propia lista.
     results: { sell: [], quick: [], avg: [] },
@@ -62,6 +65,7 @@
 
   // market_hash_name del Saco de Gemas (mismo item que valúa el backend en GEM_SACK_HASH).
   const SACK_HASH = "753-Sack of Gems";
+  const GEMS_PER_SACK = 1000;
 
   // --- Modo "avg": promedio de ventas recientes (pricehistory) ---
   //
@@ -195,7 +199,7 @@
 
   // --- Panel ---
 
-  let $progress, $list, $startBtn, $onlyProfit, $sack, $sackText, $sackMarket, $note, $tabs;
+  let $progress, $list, $startBtn, $onlyProfit, $sack, $sackText, $sackMarket, $sackInput, $note, $tabs;
 
   // Texto explicativo de cada modo (se muestra bajo la lista).
   const MODE_NOTES = {
@@ -231,6 +235,13 @@
           <a id="scp-bp-sack-market" class="scp-bp-market" title="Comprar en el mercado de Steam"
             target="_blank" rel="noopener noreferrer">🛒</a>
         </div>
+        <div class="scp-bp-sackprice">
+          <label for="scp-bp-sackinput" title="Precio al que comprás 1000 gemas. Vacío = precio de mercado del saco.">
+            Compro el saco a:
+          </label>
+          <input type="number" id="scp-bp-sackinput" min="0" step="0.01" placeholder="mercado" />
+          <button id="scp-bp-sackreset" title="Volver al precio de mercado">↺</button>
+        </div>
         <div class="scp-bp-tabs">
           <button class="scp-bp-tab scp-bp-tab-active" data-mode="sell"
             title="Contra el precio de venta listado (hay que esperar comprador)">Listada</button>
@@ -263,6 +274,7 @@
     // No propagar el click al contenedor (no tiene handler propio, pero mantiene
     // el mismo patrón que el 🛒 de la lista por consistencia).
     $sackMarket.addEventListener("click", (e) => e.stopPropagation());
+    $sackInput = panel.querySelector("#scp-bp-sackinput");
     $note = panel.querySelector("#scp-bp-note");
     $tabs = panel.querySelectorAll(".scp-bp-tab");
     $note.textContent = MODE_NOTES[state.mode];
@@ -298,9 +310,45 @@
 
     panel.querySelector(".scp-bp-close").addEventListener("click", () => panel.remove());
 
+    // Precio del saco a mano: recalcula la lista al instante (sin re-escanear) y se
+    // recuerda entre visitas. Vacío o inválido = volver al precio de mercado.
+    $sackInput.addEventListener("input", () => setSackOverride($sackInput.value));
+    panel.querySelector("#scp-bp-sackreset").addEventListener("click", () => {
+      $sackInput.value = "";
+      setSackOverride("");
+    });
+    chrome.storage.local.get("sackOverride").then(({ sackOverride }) => {
+      if (Number.isFinite(sackOverride) && sackOverride > 0) {
+        $sackInput.value = String(sackOverride);
+        state.sackOverride = sackOverride;
+        renderSack();
+        renderList();
+      }
+    });
+
     // Cargar el precio del saco al abrir (no solo al escanear): así se ve de entrada
     // y, si falla, el motivo queda visible para diagnosticar.
     loadSack();
+  }
+
+  function setSackOverride(raw) {
+    const n = parseFloat(raw);
+    state.sackOverride = Number.isFinite(n) && n > 0 ? n : null;
+    chrome.storage.local.set({ sackOverride: state.sackOverride });
+    renderSack();
+    renderList();
+  }
+
+  // Aplica el precio del saco elegido por el usuario a un resultado ya escaneado.
+  // El costo es lineal en el precio del saco ((gemas/1000) * precio), así que se
+  // recalcula acá sin volver a pedir nada; la venta neta (boosterNet) no cambia.
+  // Con override también resuelve los "sin precio" causados por no haber podido
+  // cargar el saco de mercado, siempre que la venta sí se haya podido valuar.
+  function withSackOverride(r) {
+    if (state.sackOverride == null || r.boosterNet == null) return r;
+    const cost = (r.gemCost / GEMS_PER_SACK) * state.sackOverride;
+    const profit = r.boosterNet - cost;
+    return { ...r, gemCostValue: cost, profit, profitPositive: profit > 0, status: "ok" };
   }
 
   // Pide el precio del Saco de Gemas y lo renderiza. Guarda el error si falla.
@@ -323,7 +371,12 @@
     if (state.sack) {
       $sackText.textContent =
         `Saco de gemas (1000): ${fmt(state.sack.price, state.sack.currency)} ` +
-        `· ${fmt(state.sack.price_per_gem, state.sack.currency)}/gema`;
+        `· ${fmt(state.sack.price_per_gem, state.sack.currency)}/gema` +
+        (state.sackOverride != null ? ` · usando ${fmt(state.sackOverride, state.sack.currency)}` : "");
+      $sack.classList.remove("scp-bp-sack-err");
+    } else if (state.sackOverride != null) {
+      // El precio de mercado no cargó, pero el usuario puso el suyo: no es un error.
+      $sackText.textContent = `Saco de gemas: usando tu precio ($${state.sackOverride.toFixed(2)})`;
       $sack.classList.remove("scp-bp-sack-err");
     } else {
       $sackText.textContent = `Saco de gemas: ${state.sackError || "no disponible"}`;
@@ -338,6 +391,7 @@
 
   function renderList() {
     const items = state.results[state.mode]
+      .map(withSackOverride)
       .filter((r) => (state.onlyProfit ? r.profitPositive : true))
       .sort((a, b) => (b.profit ?? -Infinity) - (a.profit ?? -Infinity));
 
@@ -533,7 +587,7 @@
       const fromCache = Boolean(resp && resp.cached);
       if (fromCache) reused++;
 
-      if (entry.profitPositive) withProfit++;
+      if (withSackOverride(entry).profitPositive) withProfit++;
       if (resp && resp.ok) {
         backoff = 0; // resultado válido: sin penalización
       } else {
